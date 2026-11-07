@@ -9,7 +9,7 @@ import {stlBytes,threeMfBytes} from './export.js';
 import {revisionName,handoffZip,handoffFiles,writeFolder,saveAsFile} from './handoff.js';
 import {traceBitmap} from './trace.js';
 const $=id=>document.getElementById(id),storageKey='taller-vero-projects-v1';
-let params={...defaults},model=null,api=null,timer,toastTimer,renderer,scene,camera,controls,group;
+let params={...defaults},model=null,api=null,timer,toastTimer,renderer,scene,camera,controls,group,stageGrid,wireframe=false,renderDirty=true;
 function toast(message){$('toast').textContent=message;$('toast').style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').style.display='none',4200);}
 function readLibrary(){try{return JSON.parse(localStorage.getItem(storageKey)||'[]');}catch{return [];}}
 function updateCount(){$('savedCount').textContent=readLibrary().length;}
@@ -20,21 +20,27 @@ function resetView(front=false){const halfFov=Math.min(camera.fov*Math.PI/360,Ma
 function initializeViewer(){
  const host=$('viewer');scene=new THREE.Scene();camera=new THREE.PerspectiveCamera(34,1,.1,2000);camera.up.set(0,0,1);
  renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setClearColor(0,0);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;host.appendChild(renderer.domElement);
- controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.minDistance=25;controls.maxDistance=400;controls.maxPolarAngle=Math.PI*.85;
- scene.add(new THREE.HemisphereLight(0xffffff,0x74836b,2.8));const light=new THREE.DirectionalLight(0xfff9eb,3.5);light.position.set(-40,-20,90);light.castShadow=true;light.shadow.mapSize.set(2048,2048);light.shadow.camera.left=-90;light.shadow.camera.right=90;light.shadow.camera.top=90;light.shadow.camera.bottom=-90;light.shadow.normalBias=.1;scene.add(light);
- const grid=new THREE.GridHelper(250,50,0xc7d1ba,0xd7decd);grid.rotation.x=Math.PI/2;grid.position.z=-.3;grid.material.transparent=true;grid.material.opacity=.55;scene.add(grid);
+ controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.minDistance=25;controls.maxDistance=400;controls.maxPolarAngle=Math.PI*.85;controls.addEventListener('change',()=>{renderDirty=true;});
+ scene.add(new THREE.HemisphereLight(0xeaf5ff,0x1b2843,2.5));const light=new THREE.DirectionalLight(0xffffff,3.8);light.position.set(-40,-20,90);light.castShadow=true;light.shadow.mapSize.set(2048,2048);light.shadow.camera.left=-90;light.shadow.camera.right=90;light.shadow.camera.top=90;light.shadow.camera.bottom=-90;light.shadow.normalBias=.1;scene.add(light);
+ const rim=new THREE.DirectionalLight(0x7bc5ff,2.1);rim.position.set(30,60,30);scene.add(rim);const fill=new THREE.DirectionalLight(0xb0ffdf,1);fill.position.set(-60,0,20);scene.add(fill);
+ const grid=new THREE.GridHelper(250,50,0x456d91,0x2a415d);stageGrid=grid;grid.rotation.x=Math.PI/2;grid.position.z=-.3;grid.material.transparent=true;grid.material.opacity=.5;scene.add(grid);
  const floor=new THREE.Mesh(new THREE.PlaneGeometry(1000,1000),new THREE.ShadowMaterial({opacity:.12}));floor.position.z=-.2;floor.receiveShadow=true;scene.add(floor);
  group=new THREE.Group();scene.add(group);
- const resize=()=>{const {width,height}=host.getBoundingClientRect();renderer.setSize(width,height);camera.aspect=width/height;camera.updateProjectionMatrix();};new ResizeObserver(resize).observe(host);resize();resetView();
- renderer.setAnimationLoop(()=>{controls.update();renderer.render(scene,camera);});
+ const resize=()=>{const {width,height}=host.getBoundingClientRect();if(!width||!height)return;renderer.setSize(width,height);camera.aspect=width/height;camera.updateProjectionMatrix();resetView();};new ResizeObserver(resize).observe(host);resize();
+ renderer.setAnimationLoop(()=>{controls.update();if(renderDirty||controls.autoRotate){renderer.render(scene,camera);renderDirty=false;}});
+ const toolbar=document.createElement('div');toolbar.className='viewport-tools';toolbar.innerHTML='<button class="small" id="toggleGrid" title="Mostrar u ocultar cuadrícula" aria-label="Cuadrícula" aria-pressed="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M2 2h16v16H2ZM2 7h16M2 13h16M7 2v16M13 2v16"/></svg></button><button class="small" id="wireframe" title="Ver la malla del modelo" aria-label="Malla del modelo" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="m10 1 8 4v10l-8 4-8-4V5ZM2 5l8 5 8-5M10 10v9M2 5l8 14 8-14M2 15l8-14 8 14"/></svg></button><button class="small" id="autoRotate" title="Girar automáticamente" aria-label="Giro automático" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M16 7a7 7 0 1 0 1 6M16 2v5h-5"/></svg></button>';
+ host.append(toolbar);const info=document.createElement('div');info.className='viewport-info';info.textContent='ESPACIO DE DISEÑO · mm';host.append(info);
+ $('toggleGrid').onclick=()=>{grid.visible=!grid.visible;renderDirty=true;$('toggleGrid').setAttribute('aria-pressed',String(grid.visible));};
+ $('wireframe').onclick=()=>{wireframe=!wireframe;for(const mesh of group.children)mesh.material.wireframe=wireframe;renderDirty=true;$('wireframe').setAttribute('aria-pressed',String(wireframe));};
+ $('autoRotate').onclick=()=>{controls.autoRotate=!controls.autoRotate;controls.autoRotateSpeed=.65;$('autoRotate').setAttribute('aria-pressed',String(controls.autoRotate));};
 }
 function draw(){
  while(group.children.length){const m=group.children[0];group.remove(m);m.geometry.dispose();m.material.dispose();}
- for(const [meshData,color] of [[model.base,params.baseColor],[model.detail,params.detailColor]]){const mesh=new THREE.Mesh(geometry(meshData),new THREE.MeshStandardMaterial({color,roughness:.65,metalness:0,flatShading:true}));mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);}
+ for(const [meshData,color] of [[model.base,params.baseColor],[model.detail,params.detailColor]]){const mesh=new THREE.Mesh(geometry(meshData),new THREE.MeshStandardMaterial({color,roughness:.4,metalness:.12,flatShading:true,wireframe}));mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);}
 }
 function setExportEnabled(enabled){for(const id of ['exportStl','export3mf'])$(id).disabled=!enabled;}
 function render(){
- clearTimeout(timer);if(!api)return;
+ clearTimeout(timer);renderDirty=true;if(!api)return;
  model=null;setExportEnabled(false);
  try{
   if(!$('designForm').checkValidity())throw Error('Completá las medidas dentro de los límites indicados.');
@@ -87,7 +93,7 @@ try{initializeViewer();}catch(error){$('loading').textContent='La vista 3D neces
 try{api=await Module({locateFile:path=>path.endsWith('.wasm')?wasmUrl:path});api.setup();sync();}catch(error){$('loading').textContent='No se pudo iniciar el motor 3D. Recargá la página.';$('statusText').textContent=error.message;console.error(error);}
 
 // Local handoff: the browser grants access only to the folder selected by Vero.
-const handoff=document.createElement('section');handoff.className='handoff';
+const handoff=document.createElement('section');handoff.className='handoff';handoff.id='handoffPanel';
 handoff.innerHTML='<h2>Tu carpeta de trabajos</h2><p>Guardá la pieza para Bambu Studio y una copia editable para volver a trabajarla.</p><div class="handoff-actions"><button id="chooseFolder" class="secondary">Elegir carpeta de trabajo</button><button id="saveFolder" class="secondary">Guardar trabajo en carpeta</button><button id="savePackage" class="primary">Descargar paquete ZIP</button></div><p id="folderStatus" class="hint">Sin carpeta elegida. El paquete ZIP funciona también si tu navegador no permite guardar en carpetas.</p><ol><li>Guardá el 3MF o extraé el ZIP.</li><li>En Bambu Studio: Archivo → Importar (Ctrl+I), o arrastrá el 3MF a la ventana.</li><li>Conservá las partes del mismo objeto y asigná los filamentos.</li><li>Elegí el perfil de tu A2L, laminá, revisá y enviá desde Bambu Studio.</li></ol><p class="hint">El 3MF contiene la pieza. La configuración de impresora y el laminado se guardan después desde Bambu Studio.</p>';
 document.querySelector('.workspace').after(handoff);
 $('export3mf').innerHTML='Guardar para Bambu Studio <span>↗</span>';
@@ -104,9 +110,9 @@ $('rasterFile').onchange=async e=>{try{const file=e.target.files[0];if(!file)ret
 $('traceThreshold').oninput=updateTrace;$('traceInvert').onchange=updateTrace;
 $('applyTrace').onclick=()=>{if(!traced)return;try{const candidate=validate({...params,logoPolygons:traced});buildModel(api,candidate);params=candidate;sync();toast('Contorno aplicado. Revisá los detalles pequeños antes de imprimir.');}catch(e){toast(e.message);}};
 
-const assistant=document.createElement('section');assistant.className='handoff assistant';
+const assistant=document.createElement('section');assistant.className='assistant';assistant.id='assistantPanel';
 assistant.innerHTML='<h2>Contale tu idea al asistente</h2><p>Pedí una chapita, un llavero o un cambio de medidas. Revisá la propuesta antes de aplicarla.</p><form id="assistantForm"><label>Tu pedido<textarea id="assistantPrompt" maxlength="2000" rows="3" placeholder="Una chapita ovalada para Luna, de 50 por 35 mm, con base rosa y nombre blanco." required></textarea></label><button id="askAssistant" class="primary" type="submit">Preparar propuesta</button></form><p id="assistantReply" role="status"></p><div id="proposalChanges"></div><button id="applyProposal" class="secondary" hidden>Aplicar propuesta al diseño</button><button id="undoProposal" class="subtle" hidden>Deshacer último cambio del asistente</button><p class="hint">Al enviar, compartís el pedido y los campos de este diseño con OpenAI. Las imágenes no se envían. Las propuestas no envían trabajos a la impresora.</p>';
-document.querySelector('.workspace').before(assistant);let proposal=null,previousDesign=null,proposalBase=null;
+document.querySelector('.output').prepend(assistant);let proposal=null,previousDesign=null,proposalBase=null;
 let localAssistant=location.hostname==='127.0.0.1';
 document.querySelector('.output details p').textContent='Chapitas, QR, logos SVG y dibujos PNG/JPG convertidos a relieve. Vista 3D, guardado en carpeta, paquetes ZIP, STL y 3MF. El asistente con IA funciona desde el servidor local. La reconstrucción de objetos desde fotos y los repuestos arbitrarios siguen pendientes.';
 if(!localAssistant){$('askAssistant').disabled=true;$('assistantReply').textContent='Comprobando disponibilidad del asistente…';fetch('/api/assistant').then(async response=>{if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error();const status=await response.json();localAssistant=status.enabled===true;$('askAssistant').disabled=!localAssistant;$('assistantReply').textContent=localAssistant?'El asistente está listo. Contale qué querés crear.':'La clave del asistente todavía no está configurada en el servidor.';}).catch(()=>$('assistantReply').textContent='Este alojamiento no tiene servidor de IA. Podés usar las herramientas de diseño y exportación o abrir la versión local.');}
