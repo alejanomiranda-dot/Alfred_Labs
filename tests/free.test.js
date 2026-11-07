@@ -19,6 +19,11 @@ test('agujero transversal, contorno extruido, texto y unión producen sólidos c
  const m=free([node('extrude',{points:[[-10,-10],[10,-10],[0,10]],height:3}),node('text',{text:'A',fontSize:5,height:1,position:[0,0,2.8]}),node('union',{inputs:[0,1]})]);closed(m.combined);assert.ok(m.volume>600);
  const intersection=free([node('sphere',{radius:10}),node('box',{size:[15,15,15]}),node('intersect',{inputs:[0,1]})]);closed(intersection.combined);assert.ok(intersection.volume>0);
 });
+test('caja abierta calcula paredes y fondo exactos sin interpretación de coordenadas',()=>{
+ const m=free([node('open_box',{size:[80,50,30],wallThickness:2})]);assert.deepEqual(m.dimensions,[80,50,30]);assert.ok(Math.abs(m.volume-22112)<.01);closed(m.combined);
+ const large=buildModel(api,{...m.params,width:250,height:200,relief:0,freeDesign:{version:1,nodes:[node('box',{size:[250,200,10]})]}});assert.deepEqual(large.dimensions,[250,200,10]);
+ assert.throws(()=>free([node('open_box',{size:[10,10,10],wallThickness:5})]),/espacio interior/);
+});
 test('programas imposibles o excesivos y piezas vacías se rechazan',()=>{
  for(const nodes of [[node('eval')],[node('union',{inputs:[0,1]})],[node('box',{size:[-1,1,1]})],Array.from({length:61},()=>node('sphere',{radius:1}))])assert.throws(()=>validateProgram({version:1,nodes}));
  assert.throws(()=>free([node('box',{size:[10,10,10]}),node('subtract',{inputs:[0,0]})]),/vacío/);

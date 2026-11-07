@@ -12,7 +12,7 @@ export function validate(raw){
   if(p.freeDesign!==null)validateProgram(p.freeDesign);
   if(p.kind==='free'&&!p.freeDesign)throw Error('Describí la pieza libre al asistente para generar su geometría.');
   if(!['none','bone'].includes(p.backDecoration)||!['engraved','raised'].includes(p.backStyle))throw Error('Decoración del dorso inválida.');
-  for(const [key,[min,max]] of Object.entries(limits)){p[key]=Number(p[key]);if(!Number.isFinite(p[key])||p[key]<min||p[key]>max)throw Error(`Revisá ${key}: debe estar entre ${min} y ${max} mm.`);}
+  for(const [key,[min,max]] of Object.entries(limits)){p[key]=p.kind==='free'?defaults[key]:Number(p[key]);if(!Number.isFinite(p[key])||p[key]<min||p[key]>max)throw Error(`Revisá ${key}: debe estar entre ${min} y ${max} mm.`);}
   for(const [key,max] of Object.entries({project:60,name:20,phone:24,qrText:180,caption:20})){if(typeof p[key]!=='string'||p[key].length>max)throw Error(`El campo ${key} es demasiado largo.`);}
   if(p.kind==='qr'&&!p.qrText.trim())throw Error('Agregá el texto o enlace del QR.');
   if(p.kind==='tag'&&!p.name.trim())throw Error('Agregá el nombre de la mascota.');

@@ -60,7 +60,7 @@ function sync(){
  for(const key of Object.keys(defaults))if($(key)&&'value' in $(key))$(key).value=params[key];
  for(const button of document.querySelectorAll('[data-kind]'))button.classList.toggle('selected',button.dataset.kind===params.kind);
  for(const kind of ['tag','qr','logo'])$(kind+'Fields').hidden=params.kind!==kind;
- $('designForm').classList.toggle('free-mode',params.kind==='free');$('freeInfo').hidden=params.kind!=='free';if(params.kind==='free')$('freeOperations').textContent=(params.freeDesign?.nodes||[]).map((n,i)=>(i+1)+'. '+({box:'Bloque',cylinder:'Cilindro / cono',sphere:'Esfera',extrude:'Contorno extruido',text:'Texto',union:'Unión',subtract:'Sustracción / hueco',intersect:'Intersección'}[n.type]||n.type)).join('\n')||'Todavía no hay geometría. Empecemos por tu idea.';
+ $('designForm').classList.toggle('free-mode',params.kind==='free');$('freeInfo').hidden=params.kind!=='free';if(params.kind==='free')$('freeOperations').textContent=(params.freeDesign?.nodes||[]).map((n,i)=>(i+1)+'. '+({box:'Bloque',open_box:'Caja abierta · paredes y fondo',cylinder:'Cilindro / cono',sphere:'Esfera',extrude:'Contorno extruido',text:'Texto',union:'Unión',subtract:'Sustracción / hueco',intersect:'Intersección'}[n.type]||n.type)).join('\n')||'Todavía no hay geometría. Empecemos por tu idea.';
  $('logoNote').textContent=params.logoPolygons?'Logo vectorial cargado. El relieve usa un solo color.':'Usá un SVG con formas rellenas y textos convertidos a curvas. Se crea un relieve de un color.';
  render();
 }

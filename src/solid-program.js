@@ -2,7 +2,7 @@
 import {FontLoader} from 'three/addons/loaders/FontLoader.js';
 import fontData from 'three/examples/fonts/gentilis_bold.typeface.json' with {type:'json'};
 const font=new FontLoader().parse(fontData);
-export const nodeTypes=['box','cylinder','sphere','extrude','text','union','subtract','intersect'];
+export const nodeTypes=['box','open_box','cylinder','sphere','extrude','text','union','subtract','intersect'];
 function number(v,min,max,label){if(typeof v!=='number'||!Number.isFinite(v)||v<min||v>max)throw Error(label+' fuera de rango.');return v;}
 export function validateProgram(program){
  if(!program||program.version!==1||!Array.isArray(program.nodes)||!program.nodes.length||program.nodes.length>60)throw Error('El diseño libre requiere entre 1 y 60 operaciones.');
@@ -10,7 +10,8 @@ export function validateProgram(program){
  program.nodes.forEach((n,i)=>{
   if(!n||!nodeTypes.includes(n.type))throw Error('Operación CAD no disponible.');
   for(const [key,range] of [['position',[-500,500]],['rotation',[-360,360]]]){if(!Array.isArray(n[key])||n[key].length!==3)throw Error('Transformación inválida.');n[key].forEach(v=>number(v,...range,key));}
-  if(n.type==='box'){if(!Array.isArray(n.size)||n.size.length!==3)throw Error('Faltan las tres medidas del volumen.');n.size.forEach(v=>number(v,.2,300,'Medida'));}
+  if(['box','open_box'].includes(n.type)){if(!Array.isArray(n.size)||n.size.length!==3)throw Error('Faltan las tres medidas del volumen.');n.size.forEach(v=>number(v,.2,300,'Medida'));}
+  if(n.type==='open_box'){number(n.wallThickness,.2,20,'Pared');if(n.wallThickness*2>=Math.min(n.size[0],n.size[1])||n.wallThickness>=n.size[2])throw Error('El espesor no deja espacio interior en la caja.');}
   if(['cylinder','sphere'].includes(n.type))number(n.radius,.1,150,'Radio');
   if(n.type==='cylinder')number(n.radiusTop,0,150,'Radio superior');
   if(['cylinder','extrude','text'].includes(n.type))number(n.height,.2,300,'Altura');
@@ -26,6 +27,7 @@ export function buildSolidProgram(api,program,params){
  try{
   for(const n of program.nodes){let solid;
    if(n.type==='box')solid=own(M.cube(n.size,true));
+   if(n.type==='open_box'){const [w,d,h]=n.size,t=n.wallThickness,outer=own(M.cube(n.size,true)),inner=own(own(M.cube([w-2*t,d-2*t,h],true)).translate([0,0,t]));solid=own(outer.subtract(inner));}
    if(n.type==='cylinder')solid=own(M.cylinder(n.height,n.radius,n.radiusTop,64,true));
    if(n.type==='sphere')solid=own(M.sphere(n.radius,48));
    if(n.type==='extrude')solid=own(own(new C([n.points],'EvenOdd')).extrude(n.height));
