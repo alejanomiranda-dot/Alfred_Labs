@@ -13,3 +13,10 @@ test('referencia explícita y conversación llegan con roles seguros; imágenes 
  assert.equal(payload.input.length,3);assert.equal(payload.input[0].role,'assistant');assert.equal(payload.input[1].content,'30 mm');assert.deepEqual(payload.input[2].content[1],{type:'input_image',image_url:imageDataUrl,detail:'auto'});
  const fail=()=>{throw Error('No se debe llamar');};for(const invalid of ['https://example.com/image.png','data:image/svg+xml;base64,AA==','data:image/png;base64,%%%'])await assert.rejects(proposeDesign({prompt:'Foto',imageDataUrl:invalid},'test-key',fail),/referencia/);
 });
+test('la corrección automática viaja al modelo y las medidas esperadas se devuelven',async()=>{
+ let payload;const fetcher=async(url,opts)=>{payload=JSON.parse(opts.body);return {ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify({message:'Listo',canApply:false,expectedSize:[70,70,60],params:defaults})}]}]})};};
+ const r=await proposeDesign({prompt:'Una maceta',params:defaults,correction:{error:'mide 8 × 8 × 10 mm',program:{version:1,nodes:[]}}},'test-key',fetcher);
+ assert.deepEqual(r.expectedSize,[70,70,60]);const sent=JSON.parse(payload.input.at(-1).content[0].text);assert.equal(sent.correccionAutomatica.problema,'mide 8 × 8 × 10 mm');
+ assert.ok(payload.text.format.schema.required.includes('expectedSize'));
+ await assert.rejects(proposeDesign({prompt:'x',correction:{error:'a'.repeat(700)}},'test-key',()=>{throw Error('no');}),/Corrección/);
+});

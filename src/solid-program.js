@@ -2,8 +2,13 @@
 import {FontLoader} from 'three/addons/loaders/FontLoader.js';
 import fontData from 'three/examples/fonts/gentilis_bold.typeface.json' with {type:'json'};
 const font=new FontLoader().parse(fontData);
-export const nodeTypes=['box','open_box','cylinder','sphere','extrude','text','union','subtract','intersect'];
+export const nodeTypes=['box','open_box','cylinder','open_cylinder','sphere','extrude','text','engrave_text','emboss_text','union','subtract','intersect'];
+export const faces=['top','bottom','front','back','left','right'];
+const faceTypes=['engrave_text','emboss_text'];
+const booleanTypes=['union','subtract','intersect'];
 function number(v,min,max,label){if(typeof v!=='number'||!Number.isFinite(v)||v<min||v>max)throw Error(label+' fuera de rango.');return v;}
+// Older programs have no floorThickness: the floor then matches the walls. 0 also means "same as walls".
+export function floorOf(n){return typeof n.floorThickness==='number'&&n.floorThickness>0?n.floorThickness:n.wallThickness;}
 export function validateProgram(program){
  if(!program||program.version!==1||!Array.isArray(program.nodes)||!program.nodes.length||program.nodes.length>60)throw Error('El diseño libre requiere entre 1 y 60 operaciones.');
  let vertices=0;
@@ -11,27 +16,65 @@ export function validateProgram(program){
   if(!n||!nodeTypes.includes(n.type))throw Error('Operación CAD no disponible.');
   for(const [key,range] of [['position',[-500,500]],['rotation',[-360,360]]]){if(!Array.isArray(n[key])||n[key].length!==3)throw Error('Transformación inválida.');n[key].forEach(v=>number(v,...range,key));}
   if(['box','open_box'].includes(n.type)){if(!Array.isArray(n.size)||n.size.length!==3)throw Error('Faltan las tres medidas del volumen.');n.size.forEach(v=>number(v,.2,300,'Medida'));}
-  if(n.type==='open_box'){number(n.wallThickness,.2,20,'Pared');if(n.wallThickness*2>=Math.min(n.size[0],n.size[1])||n.wallThickness>=n.size[2])throw Error('El espesor no deja espacio interior en la caja.');}
-  if(['cylinder','sphere'].includes(n.type))number(n.radius,.1,150,'Radio');
-  if(n.type==='cylinder')number(n.radiusTop,0,150,'Radio superior');
-  if(['cylinder','extrude','text'].includes(n.type))number(n.height,.2,300,'Altura');
+  if(['open_box','open_cylinder'].includes(n.type)){number(n.wallThickness,.2,20,'Pared');number(floorOf(n),.2,50,'Fondo');}
+  if(n.type==='open_box'&&(n.wallThickness*2>=Math.min(n.size[0],n.size[1])||floorOf(n)>=n.size[2]))throw Error('El espesor no deja espacio interior en la caja.');
+  if(['cylinder','open_cylinder','sphere'].includes(n.type))number(n.radius,.1,150,'Radio');
+  if(['cylinder','open_cylinder'].includes(n.type))number(n.radiusTop,n.type==='open_cylinder'?.1:0,150,'Radio superior');
+  if(['cylinder','open_cylinder','extrude','text'].includes(n.type))number(n.height,.2,300,'Altura');
+  if(n.type==='open_cylinder'&&(n.wallThickness+.2>Math.min(n.radius,n.radiusTop)||floorOf(n)>=n.height))throw Error('El espesor no deja espacio interior en el recipiente.');
   if(n.type==='extrude'){if(!Array.isArray(n.points)||n.points.length<3||n.points.length>500)throw Error('Contorno inválido.');vertices+=n.points.length;n.points.forEach(p=>{if(!Array.isArray(p)||p.length!==2)throw Error('Punto inválido.');p.forEach(v=>number(v,-300,300,'Coordenada'));});}
-  if(n.type==='text'){if(typeof n.text!=='string'||!n.text.trim()||n.text.length>60)throw Error('Texto inválido.');number(n.fontSize,1,80,'Tamaño del texto');for(const c of n.text.normalize('NFC'))if(c!==' '&&!font.data.glyphs[c])throw Error('Carácter no disponible: '+c);}
-  if(['union','subtract','intersect'].includes(n.type)){if(!Array.isArray(n.inputs)||n.inputs.length<2||n.inputs.length>30||n.inputs.some(v=>!Number.isInteger(v)||v<0||v>=i))throw Error('Las operaciones deben referirse a volúmenes anteriores.');}
+  if(faceTypes.includes(n.type)){if(!faces.includes(n.face))throw Error('Cara inválida para el texto.');if(!Array.isArray(n.offset)||n.offset.length!==2)throw Error('Desplazamiento inválido.');n.offset.forEach(v=>number(v,-300,300,'Desplazamiento'));number(n.height,.2,10,'Profundidad del texto');if(!Array.isArray(n.inputs)||n.inputs.length!==1||!Number.isInteger(n.inputs[0])||n.inputs[0]<0||n.inputs[0]>=i)throw Error('El texto debe aplicarse sobre una pieza anterior.');}
+  if(['text',...faceTypes].includes(n.type)){if(typeof n.text!=='string'||!n.text.trim()||n.text.length>60)throw Error('Texto inválido.');number(n.fontSize,1,80,'Tamaño del texto');for(const c of n.text.normalize('NFC'))if(c!==' '&&!font.data.glyphs[c])throw Error('Carácter no disponible: '+c);}
+  if(booleanTypes.includes(n.type)){if(!Array.isArray(n.inputs)||n.inputs.length<2||n.inputs.length>30||n.inputs.some(v=>!Number.isInteger(v)||v<0||v>=i))throw Error('Las operaciones deben referirse a volúmenes anteriores.');}
  });
  if(vertices>2000)throw Error('El contorno tiene demasiados puntos.');
+ // Only the last operation is the piece: anything not consumed by a later boolean would be silently lost.
+ const used=new Set(program.nodes.flatMap(n=>[...booleanTypes,...faceTypes].includes(n.type)?n.inputs:[]));
+ const loose=program.nodes.slice(0,-1).map((_,i)=>i).filter(i=>!used.has(i));
+ if(loose.length)throw Error('Operaciones sueltas que no forman parte de la pieza final: '+loose.map(i=>i+1).join(', ')+'. Combinalas con unión, sustracción o intersección.');
  return program;
 }
+function textSection(C,own,text,fontSize){const shapes=font.generateShapes(text.normalize('NFC'),fontSize),polys=shapes.flatMap(s=>{const e=s.extractPoints(6);return [e.shape,...e.holes].map(p=>p.map(v=>[v.x,v.y]));});const cs=own(new C(polys,'EvenOdd'));if(cs.isEmpty())throw Error('El texto quedó vacío.');const b=cs.bounds();return own(cs.translate([-(b.min[0]+b.max[0])/2,-(b.min[1]+b.max[1])/2]));}
+// Rotation that turns text lying on XY (extruded +Z, read from +Z) to face outwards and read correctly from that side.
+const faceFrames={top:{rot:[0,0,0],axis:2,sign:1,span:[0,1]},bottom:{rot:[0,180,0],axis:2,sign:-1,span:[0,1]},front:{rot:[90,0,0],axis:1,sign:-1,span:[0,2]},back:{rot:[90,0,180],axis:1,sign:1,span:[0,2]},right:{rot:[90,0,90],axis:0,sign:1,span:[1,2]},left:{rot:[90,0,-90],axis:0,sign:-1,span:[1,2]}};
+// Engraves (cuts in) or embosses (adds) text on a flat outer face of a previous solid.
+// If the requested spot crosses a hole or an edge, the nearest spot fully on solid material is used instead.
+function textOnFace(M,C,own,target,n,notes){
+ const frame=faceFrames[n.face],box=target.boundingBox(),center=[0,1,2].map(i=>(box.min[i]+box.max[i])/2),extent=[0,1,2].map(i=>box.max[i]-box.min[i]);
+ const base=textSection(C,own,n.text,n.fontSize),tb=base.bounds(),textW=tb.max[0]-tb.min[0],textH=tb.max[1]-tb.min[1],engrave=n.type==='engrave_text',depth=n.height,embed=.3;
+ const faceW=extent[frame.span[0]],faceH=extent[frame.span[1]],faceName={top:'superior',bottom:'inferior',front:'frontal',back:'trasera',left:'izquierda',right:'derecha'}[n.face];
+ if(textW>faceW-1||textH>faceH-1)throw Error('El texto «'+n.text+'» mide '+textW.toFixed(1)+' × '+textH.toFixed(1)+' mm y no entra en la cara '+faceName+' ('+faceW.toFixed(1)+' × '+faceH.toFixed(1)+' mm). Achicá las letras.');
+ if(engrave&&depth>=extent[frame.axis]-.4)throw Error('El grabado es más profundo que la pieza.');
+ const thick=engrave?depth+.5:depth+embed,expected=base.area()*(engrave?depth:embed),shift=[...center];shift[frame.axis]=(frame.sign>0?box.max[frame.axis]:box.min[frame.axis])-frame.sign*(engrave?depth:embed);
+ const fits=([u,v])=>Math.abs(u)+textW/2<=faceW/2-.5&&Math.abs(v)+textH/2<=faceH/2-.5;
+ const place=o=>own(own(own(own(base.translate(o)).extrude(thick)).rotate(frame.rot)).translate(shift));
+ const coverage=cutter=>own(target.intersect(cutter)).volume()/expected;
+ const candidates=[n.offset],step=Math.max(1,n.fontSize*.3),reach=Math.max(faceW,faceH)/2;
+ for(let r=step;r<=reach&&candidates.length<120;r+=step)for(let k=0;k<12;k++){const a=k*Math.PI/6+(k%2?0:Math.PI/2);candidates.push([n.offset[0]+r*Math.cos(a),n.offset[1]+r*Math.sin(a)]);}
+ let best=0;
+ for(const o of candidates){if(!fits(o))continue;const cutter=place(o),c=coverage(cutter);best=Math.max(best,c);
+  if(c>=.95){const moved=Math.hypot(o[0]-n.offset[0],o[1]-n.offset[1]);if(moved>0)notes.push('El texto «'+n.text+'» se corrió '+moved.toFixed(1).replace('.',',')+' mm para no pisar un agujero o borde de la cara '+faceName+'.');return own(engrave?target.subtract(cutter):target.add(cutter));}}
+ if(best<.6)throw Error('La cara '+faceName+' no es plana o está hueca donde va el texto. El grabado y el relieve de texto necesitan una cara plana y maciza.');
+ throw Error('No hay lugar en la cara '+faceName+' para el texto «'+n.text+'» sin pisar agujeros o bordes. Achicá las letras o elegí otra cara.');
+}
 export function buildSolidProgram(api,program,params){
- validateProgram(program);const owned=[],own=x=>(owned.push(x),x),solids=[];const {Manifold:M,CrossSection:C}=api;
+ validateProgram(program);const notes=[],owned=[],own=x=>(owned.push(x),x),solids=[];const {Manifold:M,CrossSection:C}=api;
  try{
   for(const n of program.nodes){let solid;
    if(n.type==='box')solid=own(M.cube(n.size,true));
-   if(n.type==='open_box'){const [w,d,h]=n.size,t=n.wallThickness,outer=own(M.cube(n.size,true)),inner=own(own(M.cube([w-2*t,d-2*t,h],true)).translate([0,0,t]));solid=own(outer.subtract(inner));}
+   if(n.type==='open_box'){const [w,d,h]=n.size,t=n.wallThickness,outer=own(M.cube(n.size,true)),inner=own(own(M.cube([w-2*t,d-2*t,h],true)).translate([0,0,floorOf(n)]));solid=own(outer.subtract(inner));}
    if(n.type==='cylinder')solid=own(M.cylinder(n.height,n.radius,n.radiusTop,64,true));
+   if(n.type==='open_cylinder'){
+    // Vessel open towards +Z: outer radii as given, walls measured horizontally, floor of its own thickness.
+    const h=n.height,t=n.wallThickness,f=floorOf(n),slope=(n.radiusTop-n.radius)/h,extra=1;
+    const outer=own(M.cylinder(h,n.radius,n.radiusTop,96,true));
+    const inner=own(own(M.cylinder(h-f+extra,n.radius+slope*f-t,Math.max(.05,n.radiusTop+slope*extra-t),96,false)).translate([0,0,-h/2+f]));
+    solid=own(outer.subtract(inner));
+   }
    if(n.type==='sphere')solid=own(M.sphere(n.radius,48));
    if(n.type==='extrude')solid=own(own(new C([n.points],'EvenOdd')).extrude(n.height));
-   if(n.type==='text'){const shapes=font.generateShapes(n.text.normalize('NFC'),n.fontSize),polys=shapes.flatMap(s=>{const e=s.extractPoints(6);return [e.shape,...e.holes].map(p=>p.map(v=>[v.x,v.y]));});const cs=own(new C(polys,'EvenOdd'));if(cs.isEmpty())throw Error('El texto quedó vacío.');const b=cs.bounds();solid=own(own(cs.translate([-(b.min[0]+b.max[0])/2,-(b.min[1]+b.max[1])/2])).extrude(n.height));}
+   if(n.type==='text')solid=own(textSection(C,own,n.text,n.fontSize).extrude(n.height));
+   if(faceTypes.includes(n.type))solid=textOnFace(M,C,own,solids[n.inputs[0]],n,notes);
    if(n.type==='union')solid=own(M.union(n.inputs.map(i=>solids[i])));
    if(n.type==='subtract'){solid=solids[n.inputs[0]];for(const i of n.inputs.slice(1))solid=own(solid.subtract(solids[i]));}
    if(n.type==='intersect'){solid=solids[n.inputs[0]];for(const i of n.inputs.slice(1))solid=own(solid.intersect(solids[i]));}
@@ -46,6 +89,6 @@ export function buildSolidProgram(api,program,params){
   const raw=solid.getMesh(),mesh={numProp:raw.numProp,positions:new Float32Array(raw.vertProperties),triangles:new Uint32Array(raw.triVerts)};
   if(mesh.triangles.length/3>200000)throw Error('La pieza generada es demasiado compleja.');
   const components=solid.decompose();const count=components.length;components.forEach(s=>s.delete());
-  return {params,base:mesh,detail:{numProp:3,positions:new Float32Array(),triangles:new Uint32Array()},combined:mesh,volume:solid.volume(),dimensions,totalHeight:dimensions[2],warnings:['Diseño libre: revisar medidas, paredes, encastres y soportes en Bambu Studio. No es una validación de resistencia.',...(count>1?[`La pieza contiene ${count} volúmenes separados. Revisá si deben estar unidos.`]:[])],qr:null};
+  return {params,base:mesh,detail:{numProp:3,positions:new Float32Array(),triangles:new Uint32Array()},combined:mesh,volume:solid.volume(),dimensions,totalHeight:dimensions[2],warnings:['Diseño libre: revisar medidas, paredes, encastres y soportes en Bambu Studio. No es una validación de resistencia.',...notes,...(count>1?[`La pieza contiene ${count} volúmenes separados. Revisá si deben estar unidos.`]:[])],qr:null};
  }finally{for(const x of owned.reverse())x.delete();}
 }
