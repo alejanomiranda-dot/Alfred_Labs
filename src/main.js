@@ -8,6 +8,8 @@ import {defaults,validate,buildModel} from './model.js';
 import {stlBytes,threeMfBytes} from './export.js';
 import {revisionName,handoffZip,handoffFiles,writeFolder,saveAsFile} from './handoff.js';
 import {traceBitmap} from './trace.js';
+import {readMeshFile} from './mesh-import.js';
+import {prepareImport,describeImport} from './solid-program.js';
 const $=id=>document.getElementById(id),storageKey='taller-vero-projects-v1';
 let params={...defaults},model=null,api=null,timer,toastTimer,renderer,scene,camera,controls,group,stageGrid,wireframe=false,renderDirty=true;
 let conversation=[],referenceImage=null,projectEpoch=0;
@@ -60,7 +62,7 @@ function sync(){
  for(const key of Object.keys(defaults))if($(key)&&'value' in $(key))$(key).value=params[key];
  for(const button of document.querySelectorAll('[data-kind]'))button.classList.toggle('selected',button.dataset.kind===params.kind);
  for(const kind of ['tag','qr','logo'])$(kind+'Fields').hidden=params.kind!==kind;
- $('designForm').classList.toggle('free-mode',params.kind==='free');$('freeInfo').hidden=params.kind!=='free';if(params.kind==='free')$('freeOperations').textContent=(params.freeDesign?.nodes||[]).map((n,i)=>(i+1)+'. '+({box:'Bloque',open_box:'Caja abierta · paredes y fondo',open_cylinder:'Recipiente redondo · paredes y fondo',engrave_text:'Texto grabado',emboss_text:'Texto en relieve',cylinder:'Cilindro / cono',sphere:'Esfera',extrude:'Contorno extruido',text:'Texto',union:'Unión',subtract:'Sustracción / hueco',intersect:'Intersección'}[n.type]||n.type)).join('\n')||'Todavía no hay geometría. Empecemos por tu idea.';
+ $('designForm').classList.toggle('free-mode',params.kind==='free');$('freeInfo').hidden=params.kind!=='free';if(params.kind==='free')$('freeOperations').textContent=(params.freeDesign?.nodes||[]).map((n,i)=>(i+1)+'. '+({box:'Bloque',open_box:'Caja abierta · paredes y fondo',imported:'Pieza importada del archivo',open_cylinder:'Recipiente redondo · paredes y fondo',revolve:'Pieza de revolución (perfil por tramos)',engrave_text:'Texto grabado',emboss_text:'Texto en relieve',cylinder:'Cilindro / cono',sphere:'Esfera',extrude:'Contorno extruido',text:'Texto',union:'Unión',subtract:'Sustracción / hueco',intersect:'Intersección'}[n.type]||n.type)).join('\n')||'Todavía no hay geometría. Empecemos por tu idea.';
  $('logoNote').textContent=params.logoPolygons?'Logo vectorial cargado. El relieve usa un solo color.':'Usá un SVG con formas rellenas y textos convertidos a curvas. Se crea un relieve de un color.';
  render();
 }
@@ -68,7 +70,7 @@ $('designForm').addEventListener('submit',e=>e.preventDefault());
 $('designForm').addEventListener('input',e=>{if(!(e.target.id in defaults))return;params[e.target.id]=e.target.type==='number'?Number(e.target.value):e.target.value;model=null;setExportEnabled(false);clearTimeout(timer);timer=setTimeout(render,180);});
 for(const button of document.querySelectorAll('[data-kind]'))button.addEventListener('click',()=>{
  resetProjectContext();params.kind=button.dataset.kind;
- Object.assign(params,params.kind==='tag'?{project:'Chapita de Mora',width:45,height:32,baseColor:'#e9a08c',detailColor:'#fff8e9'}:params.kind==='qr'?{project:'Mi llavero QR',width:50,height:58,shape:'round',baseColor:'#fff8e9',detailColor:'#254e40'}:params.kind==='free'?{project:'Mi diseño libre',freeDesign:null}:{project:'Mi llavero con logo',width:45,height:40,baseColor:'#254e40',detailColor:'#fff8e9'});sync();if(camera)resetView();
+ Object.assign(params,params.kind==='tag'?{project:'Chapita de Mora',width:45,height:32,baseColor:'#e9a08c',detailColor:'#fff8e9'}:params.kind==='qr'?{project:'Mi llavero QR',width:50,height:58,shape:'round',baseColor:'#fff8e9',detailColor:'#254e40'}:params.kind==='free'?{project:'Mi diseño libre',freeDesign:null,importedMesh:null}:{project:'Mi llavero con logo',width:45,height:40,baseColor:'#254e40',detailColor:'#fff8e9'});sync();if(camera)resetView();
 });
 $('front').onclick=()=>resetView(true);$('perspective').onclick=()=>resetView();$('resetView').onclick=()=>resetView();
 const backButton=document.createElement('button');backButton.id='backView';backButton.className='small';backButton.textContent='Dorso';backButton.onclick=()=>resetView(false,true);$('front').after(backButton);
@@ -77,8 +79,8 @@ const backFields=document.createElement('section');backFields.innerHTML='<div cl
 $('exportStl').onclick=()=>{render();if(model)download(stlBytes(model.combined),basename()+'.stl','model/stl');};
 $('export3mf').onclick=async()=>{render();if(!model)return;try{const name=revisionName(params.project)+'.3mf',bytes=threeMfBytes(model);const result=await saveAsFile(window,bytes,name,'3mf');if(result.method==='download'){download(bytes,name,'model/3mf');toast('Descarga iniciada. La ubicación depende de la configuración del navegador.');}else if(result.method==='picker')toast('Archivo guardado. Abrilo o arrastralo a Bambu Studio.');}catch(e){toast('No se pudo guardar: '+e.message);}};
 $('exportProject').onclick=()=>{try{download(JSON.stringify(validate(params),null,2),basename()+'.json','application/json');}catch(e){toast(e.message);}};
-$('importProject').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>2e6)throw Error('El proyecto es demasiado grande.');const candidate=validate(JSON.parse(await file.text()));resetProjectContext();const previous=params;params=candidate;sync();if(!model){params=previous;sync();throw Error('El proyecto no pudo generar una pieza válida.');}if(camera)resetView();toast('Proyecto abierto.');}catch(error){toast('No se pudo abrir: '+error.message);}finally{e.target.value='';}};
-$('save').onclick=()=>{try{render();if(!model)throw Error('Revisá el diseño antes de guardarlo.');const all=readLibrary();all.unshift({id:crypto.randomUUID(),date:new Date().toISOString(),params:validate(params)});localStorage.setItem(storageKey,JSON.stringify(all.slice(0,50)));updateCount();toast('Diseño guardado en este navegador.');}catch(error){toast('No se pudo guardar: '+error.message);}};
+$('importProject').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>40e6)throw Error('El proyecto es demasiado grande.');const candidate=validate(JSON.parse(await file.text()));resetProjectContext();const previous=params;params=candidate;sync();if(!model){params=previous;sync();throw Error('El proyecto no pudo generar una pieza válida.');}if(camera)resetView();toast('Proyecto abierto.');}catch(error){toast('No se pudo abrir: '+error.message);}finally{e.target.value='';}};
+$('save').onclick=()=>{try{render();if(!model)throw Error('Revisá el diseño antes de guardarlo.');const all=readLibrary();all.unshift({id:crypto.randomUUID(),date:new Date().toISOString(),params:validate(params)});localStorage.setItem(storageKey,JSON.stringify(all.slice(0,50)));updateCount();toast('Diseño guardado en este navegador.');}catch(error){toast(error.name==='QuotaExceededError'?'Esta pieza es demasiado pesada para la biblioteca del navegador. Usá «Exportar proyecto editable» para guardarla como archivo.':'No se pudo guardar: '+error.message);}};
 function showLibrary(){
  $('libraryList').replaceChildren();const all=readLibrary();if(!all.length){$('libraryList').textContent='Tu próximo diseño empieza acá. Guardá una pieza para encontrarla en esta biblioteca.';}
  all.forEach(item=>{const row=document.createElement('div');row.className='saved-row';const content=document.createElement('div'),title=document.createElement('strong'),meta=document.createElement('small');title.textContent=item.params.project;meta.textContent=new Date(item.date).toLocaleDateString('es-AR')+' · '+item.params.width+' × '+item.params.height+' mm';content.append(title,meta);const open=document.createElement('button');open.className='secondary';open.textContent='Abrir';open.onclick=()=>{try{resetProjectContext();params=validate(item.params);sync();if(camera)resetView();$('library').close();}catch(e){toast(e.message);}};const remove=document.createElement('button');remove.className='subtle';remove.textContent='Eliminar';remove.onclick=()=>{try{localStorage.setItem(storageKey,JSON.stringify(readLibrary().filter(x=>x.id!==item.id)));updateCount();showLibrary();}catch{toast('El navegador no permite modificar el guardado.');}};row.append(content,open,remove);$('libraryList').append(row);});
@@ -129,16 +131,16 @@ function sizeText(v){return v.map(x=>String(Math.round(x*10)/10).replace('.',','
 // Builds the proposal exactly as it would be applied; a free piece must also match the size the guide promised.
 function checkProposal(base,result){
  const candidate=validate({...base,...result.params}),built=buildModel(api,candidate);
- if(candidate.kind==='free'&&result.expectedSize){const got=[...built.dimensions].sort((a,b)=>a-b),want=[...result.expectedSize].sort((a,b)=>a-b);if(got.some((v,i)=>Math.abs(v-want[i])>Math.max(1,want[i]*.03)))throw Error('La pieza construida mide '+sizeText(built.dimensions)+' pero se esperaba '+sizeText(result.expectedSize)+'. Probablemente falta combinar o ubicar bien alguna operación.');}
+ if(candidate.kind==='free'&&result.expectedSize){const got=[...built.dimensions].sort((a,b)=>a-b),want=[...result.expectedSize].sort((a,b)=>a-b);if(got.some((v,i)=>Math.abs(v-want[i])>Math.max(1,want[i]*.03)))throw Error('La pieza construida mide '+sizeText(built.dimensions)+' pero se esperaba '+sizeText(result.expectedSize)+'. Probablemente falta combinar o ubicar bien alguna operación. Ubicación real de cada operación (mm, antes de centrar): '+built.operationBounds.map(o=>o.index+' '+o.type+' X '+o.min[0].toFixed(1)+'..'+o.max[0].toFixed(1)+' Y '+o.min[1].toFixed(1)+'..'+o.max[1].toFixed(1)+' Z '+o.min[2].toFixed(1)+'..'+o.max[2].toFixed(1)).join('; ')+'.');}
  return {candidate,built};
 }
 $('assistantForm').onsubmit=async e=>{e.preventDefault();if(!localAssistant)return;proposal=null;proposalBase=null;$('applyProposal').hidden=true;$('proposalChanges').replaceChildren();$('askAssistant').disabled=true;$('assistantReply').textContent='Preparando una propuesta…';const prompt=$('assistantPrompt').value,snapshot=JSON.stringify(params),base=JSON.parse(snapshot),epoch=projectEpoch,maxAttempts=3;
  try{let result,checked=null,correction,lastError='';
   for(let attempt=1;attempt<=maxAttempts;attempt++){
    if(attempt>1){$('assistantReply').textContent='Revisando la propuesta y corrigiendo un detalle… ('+attempt+'/'+maxAttempts+')';await new Promise(r=>setTimeout(r,2100));if(epoch!==projectEpoch)return;}
-   const response=await fetch('/api/assistant',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,params:base,history:conversation,imageDataUrl:referenceImage,...(correction?{correction}:{})})});result=await response.json();if(!response.ok)throw Error(result.error||'No se pudo obtener una propuesta.');if(epoch!==projectEpoch)return;
+   const response=await fetch('/api/assistant',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,params:{...base,importedMesh:undefined},history:conversation,imageDataUrl:referenceImage,...(base.importedMesh?{importedSummary:{name:base.importedMesh.name,size:importedSize(base.importedMesh),...describeImport(api,base.importedMesh)}}:{}),...(correction?{correction}:{})})});result=await response.json();if(!response.ok)throw Error(result.error||'No se pudo obtener una propuesta.');if(epoch!==projectEpoch)return;
    if(!result.canApply)break;
-   try{checked=checkProposal(base,result);break;}catch(error){lastError=error.message;correction={error:lastError.slice(0,600),program:result.params.freeDesign??null};}
+   try{checked=checkProposal(base,result);break;}catch(error){lastError=error.message;correction={error:lastError.slice(0,1500),program:result.params.freeDesign??null};}
   }
   const failed=result.canApply&&!checked,message=failed?'Intenté armar la pieza pero no logré que coincida con lo que pediste. ¿Me la describís de otra forma, o la armamos por partes? (Detalle: '+lastError+')':result.message;
   conversation.push({role:'user',content:prompt.slice(0,1600)},{role:'assistant',content:message.slice(0,1600)});conversation=conversation.slice(-12);showConversation();$('assistantPrompt').value='';
@@ -161,3 +163,16 @@ $('referenceFile').onchange=async e=>{const input=e.target,file=input.files[0];t
 $('removeReference').onclick=()=>{referenceImage=null;$('referencePreview').removeAttribute('src');$('referencePanel').hidden=true;};
 
 $('referenceFile').oncancel=()=>{delete $('referenceFile').dataset.newProject;};
+
+// Start from the person's own 3D file: it becomes the first operation of a free design.
+function importedSize(m){const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];for(let i=0;i<m.vertices.length;i++){min[i%3]=Math.min(min[i%3],m.vertices[i]);max[i%3]=Math.max(max[i%3],m.vertices[i]);}return max.map((v,i)=>v-min[i]);}
+const modelInput=document.createElement('input');modelInput.type='file';modelInput.accept='.stl,.3mf';modelInput.hidden=true;modelInput.id='modelFile';document.body.append(modelInput);
+$('startModel').onclick=()=>{if(!api){toast('El motor 3D todavía se está preparando. Probá de nuevo en unos segundos.');return;}modelInput.click();};
+modelInput.onchange=async()=>{const file=modelInput.files[0];modelInput.value='';if(!file)return;
+ try{if(file.size>80e6)throw Error('El archivo supera 80 MB.');toast('Leyendo '+file.name+'…');await new Promise(r=>setTimeout(r,30));
+  const read=readMeshFile(file.name,new Uint8Array(await file.arrayBuffer())),prepared=prepareImport(api,read);
+  resetProjectContext();params={...defaults,kind:'free',project:read.name.slice(0,60)||'Pieza importada',importedMesh:prepared.mesh,freeDesign:{version:1,nodes:[{type:'imported',position:[0,0,0],rotation:[0,0,0]}]}};sync();if(!model)throw Error($('statusText').textContent);if(camera)resetView();
+  const size=sizeText(prepared.size),notes=[read.parts>1?'El archivo tenía '+read.parts+' partes; se unieron en una sola pieza.':'',prepared.tolerance?'La malla se simplificó de '+prepared.original.toLocaleString('es-AR')+' a '+prepared.triangles.toLocaleString('es-AR')+' triángulos (tolerancia '+String(prepared.tolerance).replace('.',',')+' mm) para que el taller funcione ágil.':''].filter(Boolean).join(' ');
+  conversation.push({role:'assistant',content:'Abrí tu pieza «'+read.name+'»: mide '+size+'. '+notes+' Contame qué querés cambiarle: un grabado, un texto en relieve, un agujero, recortarla o sumarle algo.'});showConversation();
+  $('assistantReply').textContent='Pieza importada. Contale a la guía qué querés cambiarle.';$('assistantPrompt').placeholder='Grabale VERO abajo, agregale un agujero de 5 mm…';$('assistantPanel').scrollIntoView({behavior:'smooth',block:'center'});$('assistantPrompt').focus();toast('Pieza importada: '+size+'.');
+ }catch(error){toast('No se pudo importar: '+error.message);}};

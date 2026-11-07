@@ -18,5 +18,5 @@ test('la corrección automática viaja al modelo y las medidas esperadas se devu
  const r=await proposeDesign({prompt:'Una maceta',params:defaults,correction:{error:'mide 8 × 8 × 10 mm',program:{version:1,nodes:[]}}},'test-key',fetcher);
  assert.deepEqual(r.expectedSize,[70,70,60]);const sent=JSON.parse(payload.input.at(-1).content[0].text);assert.equal(sent.correccionAutomatica.problema,'mide 8 × 8 × 10 mm');
  assert.ok(payload.text.format.schema.required.includes('expectedSize'));
- await assert.rejects(proposeDesign({prompt:'x',correction:{error:'a'.repeat(700)}},'test-key',()=>{throw Error('no');}),/Corrección/);
+ await assert.rejects(proposeDesign({prompt:'x',correction:{error:'a'.repeat(1600)}},'test-key',()=>{throw Error('no');}),/Corrección/);
 });

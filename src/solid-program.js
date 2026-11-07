@@ -2,7 +2,7 @@
 import {FontLoader} from 'three/addons/loaders/FontLoader.js';
 import fontData from 'three/examples/fonts/gentilis_bold.typeface.json' with {type:'json'};
 const font=new FontLoader().parse(fontData);
-export const nodeTypes=['box','open_box','cylinder','open_cylinder','sphere','extrude','text','engrave_text','emboss_text','union','subtract','intersect'];
+export const nodeTypes=['imported','box','open_box','cylinder','open_cylinder','revolve','sphere','extrude','text','engrave_text','emboss_text','union','subtract','intersect'];
 export const faces=['top','bottom','front','back','left','right'];
 const faceTypes=['engrave_text','emboss_text'];
 const booleanTypes=['union','subtract','intersect'];
@@ -22,6 +22,15 @@ export function validateProgram(program){
   if(['cylinder','open_cylinder'].includes(n.type))number(n.radiusTop,n.type==='open_cylinder'?.1:0,150,'Radio superior');
   if(['cylinder','open_cylinder','extrude','text'].includes(n.type))number(n.height,.2,300,'Altura');
   if(n.type==='open_cylinder'&&(n.wallThickness+.2>Math.min(n.radius,n.radiusTop)||floorOf(n)>=n.height))throw Error('El espesor no deja espacio interior en el recipiente.');
+  if(n.type==='imported'&&!program.hasImported)throw Error('El proyecto no tiene una pieza importada.');
+  if(n.type==='revolve'){
+   if(!Array.isArray(n.points)||n.points.length<2||n.points.length>200)throw Error('El perfil necesita entre 2 y 200 puntos [radio, altura].');vertices+=n.points.length;
+   n.points.forEach((p,k)=>{if(!Array.isArray(p)||p.length!==2)throw Error('Punto de perfil inválido.');number(p[0],0,150,'Radio del perfil');number(p[1],-300,300,'Altura del perfil');if(k&&p[1]<n.points[k-1][1])throw Error('El perfil debe ir de abajo hacia arriba (alturas crecientes).');});
+   if(n.points.at(-1)[1]-n.points[0][1]<.2)throw Error('El perfil necesita altura.');
+   number(n.wallThickness,0,20,'Pared');number(typeof n.floorThickness==='number'?n.floorThickness:0,0,50,'Fondo');
+   if(n.wallThickness>0&&n.points.some(p=>p[0]<n.wallThickness+.2))throw Error('Con esa pared, el perfil hueco necesita radios mayores a '+(n.wallThickness+.2)+' mm en todos sus puntos.');
+   if(n.wallThickness>0&&n.floorThickness>=n.points.at(-1)[1]-n.points[0][1])throw Error('El fondo es más alto que la pieza.');
+  }
   if(n.type==='extrude'){if(!Array.isArray(n.points)||n.points.length<3||n.points.length>500)throw Error('Contorno inválido.');vertices+=n.points.length;n.points.forEach(p=>{if(!Array.isArray(p)||p.length!==2)throw Error('Punto inválido.');p.forEach(v=>number(v,-300,300,'Coordenada'));});}
   if(faceTypes.includes(n.type)){if(!faces.includes(n.face))throw Error('Cara inválida para el texto.');if(!Array.isArray(n.offset)||n.offset.length!==2)throw Error('Desplazamiento inválido.');n.offset.forEach(v=>number(v,-300,300,'Desplazamiento'));number(n.height,.2,10,'Profundidad del texto');if(!Array.isArray(n.inputs)||n.inputs.length!==1||!Number.isInteger(n.inputs[0])||n.inputs[0]<0||n.inputs[0]>=i)throw Error('El texto debe aplicarse sobre una pieza anterior.');}
   if(['text',...faceTypes].includes(n.type)){if(typeof n.text!=='string'||!n.text.trim()||n.text.length>60)throw Error('Texto inválido.');number(n.fontSize,1,80,'Tamaño del texto');for(const c of n.text.normalize('NFC'))if(c!==' '&&!font.data.glyphs[c])throw Error('Carácter no disponible: '+c);}
@@ -57,10 +66,49 @@ function textOnFace(M,C,own,target,n,notes){
  if(best<.6)throw Error('La cara '+faceName+' no es plana o está hueca donde va el texto. El grabado y el relieve de texto necesitan una cara plana y maciza.');
  throw Error('No hay lugar en la cara '+faceName+' para el texto «'+n.text+'» sin pisar agujeros o bordes. Achicá las letras o elegí otra cara.');
 }
+// The imported file is kept outside the program (it can be large); the program only says where it is used.
+export function withImport(program,params){return {...program,hasImported:Boolean(params?.importedMesh)};}
+function importedSolid(api,own,data){
+ const mesh=new api.Mesh({numProp:3,vertProperties:Float32Array.from(data.vertices),triVerts:Uint32Array.from(data.triangles)});mesh.merge();
+ let solid;try{solid=own(new api.Manifold(mesh));}catch{throw Error('La pieza importada no es un sólido cerrado (tiene agujeros o caras sueltas en la malla). Repará el archivo en Bambu Studio o en el programa donde lo hiciste.');}
+ if(solid.status()!=='NoError'||solid.isEmpty())throw Error('La pieza importada no es un sólido cerrado (tiene agujeros o caras sueltas en la malla). Repará el archivo en Bambu Studio o en el programa donde lo hiciste.');
+ return solid;
+}
+// Turns a freshly read file into the stored piece: it must be a closed solid; heavy meshes are
+// simplified with a tolerance of hundredths of a millimeter so the project stays light.
+export function prepareImport(api,file){
+ const owned=[],own=x=>(owned.push(x),x);
+ try{
+  let solid=importedSolid(api,own,file);const original=solid.numTri();let tolerance=0;
+  for(const t of [.01,.02,.05]){if(solid.numTri()<=60000)break;solid=own(solid.simplify(t));tolerance=t;}
+  if(solid.numTri()>150000)throw Error('La pieza es demasiado detallada para importarla. Simplificala antes en otro programa.');
+  const raw=solid.getMesh(),vertices=[],triangles=Array.from(raw.triVerts);
+  for(let i=0;i<raw.vertProperties.length;i+=raw.numProp)vertices.push(...[0,1,2].map(k=>Math.round(raw.vertProperties[i+k]*1e4)/1e4));
+  const b=solid.boundingBox();
+  return {mesh:{name:file.name,vertices,triangles},size:b.max.map((v,i)=>v-b.min[i]),original,triangles:solid.numTri(),tolerance,volume:solid.volume()};
+ }finally{for(const x of owned.reverse())x.delete();}
+}
+// What the guide needs to place things on an imported piece: its exact extents and real cuts at several heights
+// (outer width/depth and, when hollow, the size of the opening at that height).
+export function describeImport(api,mesh){
+ const owned=[],own=x=>(owned.push(x),x);
+ try{
+  const solid=importedSolid(api,own,mesh),b=solid.boundingBox(),round=v=>Math.round(v*10)/10,h=b.max[2]-b.min[2],steps=8,profile=[];
+  for(let i=0;i<=steps;i++){
+   const z=b.min[2]+Math.min(Math.max(h*i/steps,.05),h-.05),cut=own(solid.slice(z));if(cut.isEmpty())continue;
+   const polys=cut.toPolygons().map(p=>{const xs=p.map(v=>v[0]),ys=p.map(v=>v[1]);return {w:Math.max(...xs)-Math.min(...xs),d:Math.max(...ys)-Math.min(...ys)};}).sort((a,c)=>c.w*c.d-a.w*a.d);
+   const cb=cut.bounds(),row={z:round(z),ancho:round(cb.max[0]-cb.min[0]),prof:round(cb.max[1]-cb.min[1])};
+   if(polys.length>1){row.hueco_ancho=round(polys[1].w);row.hueco_prof=round(polys[1].d);}
+   profile.push(row);
+  }
+  return {ocupa:{x:[round(b.min[0]),round(b.max[0])],y:[round(b.min[1]),round(b.max[1])],z:[round(b.min[2]),round(b.max[2])]},cortes:profile};
+ }finally{for(const x of owned.reverse())x.delete();}
+}
 export function buildSolidProgram(api,program,params){
- validateProgram(program);const notes=[],owned=[],own=x=>(owned.push(x),x),solids=[];const {Manifold:M,CrossSection:C}=api;
+ validateProgram(withImport(program,params));const notes=[],owned=[],own=x=>(owned.push(x),x),solids=[];const {Manifold:M,CrossSection:C}=api;
  try{
   for(const n of program.nodes){let solid;
+   if(n.type==='imported')solid=importedSolid(api,own,params.importedMesh);
    if(n.type==='box')solid=own(M.cube(n.size,true));
    if(n.type==='open_box'){const [w,d,h]=n.size,t=n.wallThickness,outer=own(M.cube(n.size,true)),inner=own(own(M.cube([w-2*t,d-2*t,h],true)).translate([0,0,floorOf(n)]));solid=own(outer.subtract(inner));}
    if(n.type==='cylinder')solid=own(M.cylinder(n.height,n.radius,n.radiusTop,64,true));
@@ -70,6 +118,19 @@ export function buildSolidProgram(api,program,params){
     const outer=own(M.cylinder(h,n.radius,n.radiusTop,96,true));
     const inner=own(own(M.cylinder(h-f+extra,n.radius+slope*f-t,Math.max(.05,n.radiusTop+slope*extra-t),96,false)).translate([0,0,-h/2+f]));
     solid=own(outer.subtract(inner));
+   }
+   if(n.type==='revolve'){
+    // Lathe: points are the outer silhouette [radius, z] from bottom to top. wallThickness 0 = solid;
+    // otherwise a shell of that (normal) thickness, open at the top, with a floor (floorThickness>0) or open at the bottom (0).
+    const pts=n.points,t=n.wallThickness,z0=pts[0][1],zn=pts.at(-1)[1];
+    solid=own(own(new C([[[0,z0],...pts,[0,zn]]],'EvenOdd')).revolve(96));
+    if(t>0){
+     const ext=[[pts[0][0],z0-t-2],...pts,[pts.at(-1)[0],zn+t+2]],full=[...ext,...ext.slice().reverse().map(([r,z])=>[-r,z])];
+     const bottom=n.floorThickness>0?z0+n.floorThickness:z0-t-3,clip=own(C.square([800,zn+t+3-bottom]).translate([-400,bottom]));
+     const cavity=own(own(own(new C([full],'EvenOdd')).offset(-t,'Miter',2)).intersect(clip));
+     if(cavity.isEmpty())throw Error('La pared es demasiado gruesa para ese perfil.');
+     solid=own(solid.subtract(own(cavity.revolve(96))));
+    }
    }
    if(n.type==='sphere')solid=own(M.sphere(n.radius,48));
    if(n.type==='extrude')solid=own(own(new C([n.points],'EvenOdd')).extrude(n.height));
@@ -83,12 +144,13 @@ export function buildSolidProgram(api,program,params){
    if(solid.numTri()>200000)throw Error('La operación genera demasiados triángulos. Simplificá la pieza.');
    solids.push(solid);
   }
+  const operationBounds=solids.map((x,i)=>{const b=x.boundingBox();return {index:i+1,type:program.nodes[i].type,min:b.min,max:b.max};});
   let solid=solids.at(-1);const bounds=solid.boundingBox(),dimensions=bounds.max.map((v,i)=>v-bounds.min[i]);
   if(dimensions.some(v=>!Number.isFinite(v)||v<.2||v>300))throw Error('La pieza debe medir entre 0,2 y 300 mm en cada eje.');
   solid=own(solid.translate([-(bounds.min[0]+bounds.max[0])/2,-(bounds.min[1]+bounds.max[1])/2,-bounds.min[2]]));
   const raw=solid.getMesh(),mesh={numProp:raw.numProp,positions:new Float32Array(raw.vertProperties),triangles:new Uint32Array(raw.triVerts)};
   if(mesh.triangles.length/3>200000)throw Error('La pieza generada es demasiado compleja.');
   const components=solid.decompose();const count=components.length;components.forEach(s=>s.delete());
-  return {params,base:mesh,detail:{numProp:3,positions:new Float32Array(),triangles:new Uint32Array()},combined:mesh,volume:solid.volume(),dimensions,totalHeight:dimensions[2],warnings:['Diseño libre: revisar medidas, paredes, encastres y soportes en Bambu Studio. No es una validación de resistencia.',...notes,...(count>1?[`La pieza contiene ${count} volúmenes separados. Revisá si deben estar unidos.`]:[])],qr:null};
+  return {params,base:mesh,detail:{numProp:3,positions:new Float32Array(),triangles:new Uint32Array()},combined:mesh,volume:solid.volume(),dimensions,totalHeight:dimensions[2],operationBounds,warnings:['Diseño libre: revisar medidas, paredes, encastres y soportes en Bambu Studio. No es una validación de resistencia.',...notes,...(count>1?[`La pieza contiene ${count} volúmenes separados. Revisá si deben estar unidos.`]:[])],qr:null};
  }finally{for(const x of owned.reverse())x.delete();}
 }

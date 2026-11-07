@@ -72,3 +72,12 @@ test('texto que no entra o sobre una cara hueca o curva se rechaza con explicaci
  assert.throws(()=>free([node('open_box',{size:[40,30,10],wallThickness:2}),node('engrave_text',{inputs:[0],text:'VERO',fontSize:8,height:.6,face:'top',offset:[0,0]})]),/no es plana|No hay lugar/);
  const under=free([pot,node('engrave_text',{inputs:[0],text:'VERO',fontSize:10,height:.6,face:'bottom',offset:[0,-15]})]);assert.ok(Math.abs(under.dimensions[2]-60)<.01);closed(under.combined);
 });
+test('pieza de revolución por tramos: maciza, tubo abierto y con fondo',()=>{
+ const points=[[30,0],[15,20],[15,40]];
+ const solid=free([node('revolve',{points,wallThickness:0,floorThickness:0})]),tube=free([node('revolve',{points,wallThickness:2,floorThickness:0})]),cup=free([node('revolve',{points,wallThickness:2,floorThickness:3})]);
+ for(const m of [solid,tube,cup]){assert.deepEqual(m.dimensions.map(v=>Math.round(v*100)/100),[60,60,40]);closed(m.combined);}
+ const cone=Math.PI*20/3*(30**2+30*15+15**2),neck=Math.PI*15**2*20;assert.ok(Math.abs(solid.volume-(cone+neck))/(cone+neck)<.01);
+ assert.ok(tube.volume<cup.volume&&cup.volume<solid.volume/2);
+ assert.throws(()=>validateProgram({version:1,nodes:[node('revolve',{points:[[10,5],[10,0]],wallThickness:0,floorThickness:0})]}),/abajo hacia arriba/);
+ assert.throws(()=>validateProgram({version:1,nodes:[node('revolve',{points:[[1,0],[10,10]],wallThickness:2,floorThickness:0})]}),/radios mayores/);
+});
