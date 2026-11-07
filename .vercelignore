@@ -1,0 +1,9 @@
+.env*
+.dev.vars*
+.key-setup/
+.git/
+.openai/
+node_modules/
+dist/
+muestras/
+*.tar.gz

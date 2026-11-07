@@ -1,0 +1,11 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {unzipSync,strFromU8} from 'fflate';
+import Module from 'manifold-3d';
+import {defaults,buildModel} from '../src/model.js';
+import {handoffZip,revisionName,writeFolder,saveAsFile} from '../src/handoff.js';
+import {traceBitmap} from '../src/trace.js';
+test('paquete lleva 3MF válido, JSON editable y pasos para Bambu',async()=>{const api=await Module();api.setup();const model=buildModel(api,defaults),stem=revisionName('Mora / ..',new Date(2026,10,7,14,2,3),'abcdef'),files=unzipSync(handoffZip(model,stem));assert.equal(stem,'Mora-20261107-140203-abcdef');assert.ok(unzipSync(files[stem+'.3mf'])['3D/3dmodel.model']);assert.deepEqual(JSON.parse(strFromU8(files[stem+'.json'])),model.params);assert.match(strFromU8(files['COMO-IMPRIMIR.txt']),/Ctrl\+I/);});
+test('cancelar selector no descarga y navegador sin selector ofrece descarga',async()=>{assert.equal((await saveAsFile({},new Uint8Array(),'a.3mf','3mf')).method,'download');assert.equal((await saveAsFile({showSaveFilePicker:async()=>{throw Object.assign(Error(),{name:'AbortError'});}},new Uint8Array(),'a.3mf','3mf')).method,'cancelled');});
+test('error al escribir no informa éxito; nombres fuera de carpeta se rechazan',async()=>{let aborted=false;const folder={getFileHandle:async()=>({createWritable:async()=>({write:async()=>{throw Error('disco lleno');},abort:async()=>{aborted=true;}})})};await assert.rejects(writeFolder(folder,{'a.json':new Uint8Array()}),/disco lleno/);assert.ok(aborted);await assert.rejects(writeFolder(folder,{'../a.json':new Uint8Array()}),/inválido/);});
+test('trazado conserva un hueco y produce un relieve cerrado',async()=>{const width=16,height=16,rgba=new Uint8ClampedArray(width*height*4).fill(255);for(let y=3;y<13;y++)for(let x=3;x<13;x++)if(!(x>=6&&x<10&&y>=6&&y<10)){const i=(y*width+x)*4;rgba[i]=rgba[i+1]=rgba[i+2]=0;}const result=traceBitmap(rgba,width,height);assert.equal(result.polygons.length,2);assert.equal(result.filled,84);const api=await Module();api.setup();const m=buildModel(api,{...defaults,kind:'logo',height:40,logoPolygons:result.polygons});assert.ok(m.volume>0);});

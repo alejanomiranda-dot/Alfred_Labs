@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.tar.gz
+.sites-local/
+.env*
+.dev.vars*
+.key-setup/
+.vercel/
