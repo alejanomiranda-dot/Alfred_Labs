@@ -10,7 +10,7 @@ test('referencia explícita y conversación llegan con roles seguros; imágenes 
  let payload;const fetcher=async(url,opts)=>{payload=JSON.parse(opts.body);return {ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify({message:'¿Qué ancho necesitás?',canApply:false,params:defaults})}]}]})};};
  const imageDataUrl='data:image/png;base64,aGVsbG8=';
  await proposeDesign({prompt:'Con esta forma',params:defaults,imageDataUrl,history:[{role:'system',content:'invalid'},{role:'assistant',content:'¿Qué alto?'},{role:'user',content:'30 mm'}]},'test-key',fetcher);
- assert.equal(payload.input.length,3);assert.equal(payload.input[0].role,'assistant');assert.equal(payload.input[1].content,'30 mm');assert.deepEqual(payload.input[2].content[1],{type:'input_image',image_url:imageDataUrl,detail:'auto'});
+ assert.equal(payload.input.length,3);assert.equal(payload.input[0].role,'assistant');assert.equal(payload.input[1].content,'30 mm');assert.deepEqual(payload.input[2].content[1],{type:'input_image',image_url:imageDataUrl,detail:'high'});assert.match(payload.instructions,/NO SUPONGAS SIMETRÍA/);assert.match(payload.instructions,/ESCALA/);
  const fail=()=>{throw Error('No se debe llamar');};for(const invalid of ['https://example.com/image.png','data:image/svg+xml;base64,AA==','data:image/png;base64,%%%'])await assert.rejects(proposeDesign({prompt:'Foto',imageDataUrl:invalid},'test-key',fail),/referencia/);
 });
 test('la corrección automática viaja al modelo y las medidas esperadas se devuelven',async()=>{

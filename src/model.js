@@ -4,7 +4,7 @@ import {maxStoredTriangles} from './mesh-import.js';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import fontData from 'three/examples/fonts/gentilis_bold.typeface.json' with { type: 'json' };
 const font = new FontLoader().parse(fontData);
-export const defaults = {version:3,kind:'tag',project:'Chapita de Mora',name:'MORA',phone:'11 2345 6789',qrText:'https://example.com',caption:'HECHO CON AMOR',shape:'round',width:45,height:32,thickness:2.4,relief:0.8,hole:4,baseColor:'#e9a08c',detailColor:'#fff8e9',backDecoration:'none',backStyle:'engraved',backDepth:.6,logoPolygons:null,freeDesign:null,importedMesh:null};
+export const defaults = {version:3,kind:'tag',project:'Chapita de Mora',name:'MORA',phone:'11 2345 6789',qrText:'https://example.com',caption:'HECHO CON AMOR',shape:'round',width:45,height:32,thickness:2.4,relief:0.8,hole:4,baseColor:'#e9a08c',detailColor:'#fff8e9',backDecoration:'none',backStyle:'engraved',backDepth:.6,logoPolygons:null,freeDesign:null,importedMesh:null,printRotation:[0,0,0]};
 const limits={width:[25,100],height:[25,100],thickness:[1.6,6],relief:[.4,2],hole:[2,6],backDepth:[.2,1.2]};
 export function validate(raw){
   const p={};
@@ -13,6 +13,8 @@ export function validate(raw){
   if(p.importedMesh!==null){const m=p.importedMesh;if(!m||typeof m.name!=='string'||m.name.length>120||!Array.isArray(m.vertices)||!Array.isArray(m.triangles)||m.vertices.length%3||m.triangles.length%3||!m.triangles.length||m.triangles.length>maxStoredTriangles*3)throw Error('La pieza importada es inválida o demasiado compleja.');if(!m.vertices.every(v=>typeof v==='number'&&Number.isFinite(v)&&Math.abs(v)<=1000))throw Error('La pieza importada tiene coordenadas inválidas.');const count=m.vertices.length/3;if(!m.triangles.every(v=>Number.isInteger(v)&&v>=0&&v<count))throw Error('La pieza importada tiene triángulos inválidos.');}
   if(p.freeDesign!==null)validateProgram(withImport(p.freeDesign,p));
   if(p.kind!=='free')p.importedMesh=null;
+  if(!Array.isArray(p.printRotation)||p.printRotation.length!==3||!p.printRotation.every(v=>[-180,-90,0,90,180].includes(v)))throw Error('Orientación de impresión inválida.');
+  if(p.kind!=='free')p.printRotation=[0,0,0];
   if(p.kind==='free'&&!p.freeDesign)throw Error('Describí la pieza libre al asistente para generar su geometría.');
   if(!['none','bone'].includes(p.backDecoration)||!['engraved','raised'].includes(p.backStyle))throw Error('Decoración del dorso inválida.');
   for(const [key,[min,max]] of Object.entries(limits)){p[key]=p.kind==='free'?defaults[key]:Number(p[key]);if(!Number.isFinite(p[key])||p[key]<min||p[key]>max)throw Error(`Revisá ${key}: debe estar entre ${min} y ${max} mm.`);}

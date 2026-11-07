@@ -8,7 +8,7 @@ import {threeMfBytes,stlBytes} from '../src/export.js';
 const api=await Module();api.setup();
 const node=(type,extra={})=>({type,position:[0,0,0],rotation:[0,0,0],...extra});
 const free=nodes=>buildModel(api,{...defaults,kind:'free',freeDesign:{version:1,nodes}});
-function closed(m){const edges=new Map();for(let i=0;i<m.triangles.length;i+=3)for(let j=0;j<3;j++){const a=m.triangles[i+j],b=m.triangles[i+(j+1)%3],key=[Math.min(a,b),Math.max(a,b)].join(':');const e=edges.get(key)||[0,0];e[0]++;e[1]+=a<b?1:-1;edges.set(key,e);}for(const e of edges.values())assert.deepEqual(e,[2,0]);}
+function closed(m){if(m.mesh)m=m.mesh;const edges=new Map();for(let i=0;i<m.triangles.length;i+=3)for(let j=0;j<3;j++){const a=m.triangles[i+j],b=m.triangles[i+(j+1)%3],key=[Math.min(a,b),Math.max(a,b)].join(':');const e=edges.get(key)||[0,0];e[0]++;e[1]+=a<b?1:-1;edges.set(key,e);}for(const e of edges.values())assert.deepEqual(e,[2,0]);}
 test('caja abierta tiene medidas y volumen de paredes reales; 3MF sin partes vacías',()=>{
  const m=free([node('box',{size:[80,50,30]}),node('box',{size:[76,46,30],position:[0,0,2]}),node('subtract',{inputs:[0,1]})]);
  assert.deepEqual(m.dimensions,[80,50,30]);assert.ok(Math.abs(m.volume-(80*50*30-76*46*28))<.01);closed(m.combined);
@@ -66,10 +66,10 @@ test('texto grabado no cambia medidas y el relieve crece en la cara elegida',()=
 test('texto que no entra o sobre una cara hueca o curva se rechaza con explicación',()=>{
  assert.throws(()=>free([node('box',{size:[20,20,5]}),node('engrave_text',{inputs:[0],text:'VERONICA',fontSize:10,height:.6,face:'top',offset:[0,0]})]),/no entra/);
  const pot=node('open_cylinder',{radius:35,radiusTop:35,height:60,wallThickness:2,floorThickness:3});
- assert.throws(()=>free([pot,node('engrave_text',{inputs:[0],text:'VERO',fontSize:10,height:.6,face:'top',offset:[0,0]})]),/no es plana|No hay lugar/);
+ const inside=free([pot,node('engrave_text',{inputs:[0],text:'VERO',fontSize:10,height:.6,face:'top',offset:[0,0]})]),plain=free([pot]);assert.ok(inside.volume<plain.volume-10);assert.ok(Math.abs(inside.dimensions[2]-60)<.01);// visto desde arriba, se graba en el fondo interior
  assert.throws(()=>free([pot,node('emboss_text',{inputs:[0],text:'VERO',fontSize:8,height:.8,face:'front',offset:[0,0]})]),/no es plana|No hay lugar/);
  const dodged=free([pot,node('cylinder',{radius:4,radiusTop:4,height:10,position:[0,0,-30]}),node('subtract',{inputs:[0,1]}),node('engrave_text',{inputs:[2],text:'VERO',fontSize:10,height:.6,face:'bottom',offset:[3,0]})]);assert.ok(dodged.warnings.some(w=>/se corrió/.test(w)));closed(dodged.combined);
- assert.throws(()=>free([node('open_box',{size:[40,30,10],wallThickness:2}),node('engrave_text',{inputs:[0],text:'VERO',fontSize:8,height:.6,face:'top',offset:[0,0]})]),/no es plana|No hay lugar/);
+ assert.ok(free([node('open_box',{size:[40,30,10],wallThickness:2}),node('engrave_text',{inputs:[0],text:'VERO',fontSize:8,height:.6,face:'top',offset:[0,0]})]).volume<40*30*10-36*26*8);
  const under=free([pot,node('engrave_text',{inputs:[0],text:'VERO',fontSize:10,height:.6,face:'bottom',offset:[0,-15]})]);assert.ok(Math.abs(under.dimensions[2]-60)<.01);closed(under.combined);
 });
 test('pieza de revolución por tramos: maciza, tubo abierto y con fondo',()=>{
@@ -80,4 +80,20 @@ test('pieza de revolución por tramos: maciza, tubo abierto y con fondo',()=>{
  assert.ok(tube.volume<cup.volume&&cup.volume<solid.volume/2);
  assert.throws(()=>validateProgram({version:1,nodes:[node('revolve',{points:[[10,5],[10,0]],wallThickness:0,floorThickness:0})]}),/abajo hacia arriba/);
  assert.throws(()=>validateProgram({version:1,nodes:[node('revolve',{points:[[1,0],[10,10]],wallThickness:2,floorThickness:0})]}),/radios mayores/);
+});
+test('multicolor: relieves, incrustados e íconos salen como partes de color en el 3MF',()=>{
+ const m=free([node('box',{size:[60,40,8]}),node('emboss_text',{inputs:[0],icon:'paw',fontSize:18,height:1,face:'top',offset:[-18,0],text:'',color:'#ffffff'}),node('engrave_text',{inputs:[1],text:'LOLA',fontSize:9,height:.8,face:'top',offset:[10,0],color:'#ff3366'})]);
+ assert.deepEqual(m.parts.map(p=>p.color),['#e9a08c','#ffffff','#ff3366']);for(const p of m.parts)closed(p);
+ const total=m.parts.reduce((s,p)=>s+p.mesh.triangles.length,0);assert.ok(total>0);
+ const xml=strFromU8(unzipSync(threeMfBytes(m))['3D/3dmodel.model']);assert.equal((xml.match(/<component objectid=/g)||[]).length,3);assert.match(xml,/FF3366FF/);
+ assert.throws(()=>free([node('box',{size:[60,40,8]}),...['#111111','#222222','#333333','#444444'].map((c,i)=>node('emboss_text',{inputs:[i],icon:'star',fontSize:8,height:1,face:'top',offset:[-22+i*14,0],text:'',color:c}))]),/hasta 4/);
+});
+test('texto envuelto en cilindros y conos, tipografías e íconos',()=>{
+ const pot=node('open_cylinder',{radius:35,radiusTop:35,height:60,wallThickness:3,floorThickness:3}),plain=free([pot]);
+ const wrapped=free([pot,node('engrave_text',{inputs:[0],text:'VERO',fontSize:12,height:.8,face:'around',offset:[0,0]})]);
+ assert.ok(wrapped.volume<plain.volume-20);assert.deepEqual(wrapped.dimensions.map(Math.round),[70,70,60]);closed(wrapped.combined);
+ const raised=free([pot,node('emboss_text',{inputs:[0],text:'VERO',fontSize:12,height:1,face:'around',offset:[0,0]})]);assert.ok(raised.volume>plain.volume+20);
+ assert.throws(()=>free([pot,node('engrave_text',{inputs:[0],text:'VERO VERO VERO VERO VERO',fontSize:20,height:.8,face:'around',offset:[0,0]})]),/no entra alrededor/);
+ for(const font of ['gentilis','helvetiker','optimer'])closed(free([node('box',{size:[60,20,5]}),node('engrave_text',{inputs:[0],text:'Verónica',font,fontSize:8,height:.6,face:'top',offset:[0,0]})]).combined);
+ for(const icon of ['heart','paw','star','leaf','flower','bone','house','moon'])closed(free([node('box',{size:[60,40,5]}),node('emboss_text',{inputs:[0],icon,text:'',fontSize:20,height:1,face:'top',offset:[0,0]})]).combined);
 });
