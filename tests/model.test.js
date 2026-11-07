@@ -37,6 +37,26 @@ test('ovalados, acentos y logo con hueco siguen siendo sólidos cerrados',()=>{
 test('datos imposibles y QR vacío no exportan',()=>{
  for(const p of [{...defaults,width:0},{...defaults,width:NaN},{...defaults,kind:'qr',qrText:''},{...defaults,logoPolygons:[[[0,0],[1,1],[Infinity,3]]]}])assert.throws(()=>validate(p));
 });
+
+test('el huesito grabado elimina material real del dorso y conserva el frente',()=>{
+ const plain=buildModel(api,{...defaults,shape:'oval'}),back=buildModel(api,{...defaults,shape:'oval',backDecoration:'bone',backStyle:'engraved',backDepth:.8});
+ assertClosed(back.combined);assert.ok(back.backArea>10);
+ assert.ok(Math.abs((plain.volume-back.volume)-back.backArea*.8)<.01);
+ assert.deepEqual(back.detail,plain.detail);assert.equal(back.totalHeight,plain.totalHeight);
+ const files=unzipSync(threeMfBytes(back));const saved=JSON.parse(strFromU8(files['Metadata/taller-de-vero.json']));assert.equal(saved.backDecoration,'bone');assert.equal(saved.backStyle,'engraved');
+ // The exported STL must include the recessed surface at z=0.8, not just metadata.
+ const stl=stlBytes(back.combined),view=new DataView(stl.buffer);let recessedVertices=0;
+ for(let i=0;i<back.combined.triangles.length/3;i++)for(let j=0;j<3;j++)if(Math.abs(view.getFloat32(84+i*50+12+j*12+8,true)-.8)<.0001)recessedVertices++;
+ assert.ok(recessedVertices>10);
+});
+test('huesito en relieve tiene volumen adicional, coordenadas positivas y advertencia',()=>{
+ const plain=buildModel(api,defaults),raised=buildModel(api,{...defaults,backDecoration:'bone',backStyle:'raised',backDepth:.8});assertClosed(raised.combined);
+ assert.ok(Math.abs(raised.volume-plain.volume-raised.backArea*.8)<.01);assert.equal(raised.totalHeight,4);
+ assert.ok(raised.warnings.some(x=>x.includes('soportes')));const z=[];for(let i=2;i<raised.combined.positions.length;i+=raised.combined.numProp)z.push(raised.combined.positions[i]);assert.equal(Math.min(...z),0);assert.ok(Math.abs(Math.max(...z)-4)<.0001);
+});
+test('proyectos anteriores abren sin agregar decoración; opciones inválidas se rechazan',()=>{
+ const old={...defaults};delete old.backDecoration;delete old.backStyle;delete old.backDepth;assert.equal(validate(old).backDecoration,'none');assert.throws(()=>validate({...defaults,backDecoration:'unicorn'}));
+});
 test('generar muestras reales para revisión en Bambu Studio',()=>{
  fs.mkdirSync('muestras',{recursive:true});for(const [name,p] of [['chapita-mora',defaults],['llavero-qr',{...defaults,kind:'qr',project:'Llavero QR de ejemplo',width:50,height:58,baseColor:'#fff8e9',detailColor:'#254e40'}]]){const model=buildModel(api,p);fs.writeFileSync(`muestras/${name}.stl`,stlBytes(model.combined));fs.writeFileSync(`muestras/${name}.3mf`,threeMfBytes(model));fs.writeFileSync(`muestras/${name}.json`,JSON.stringify(p,null,2));}
 });

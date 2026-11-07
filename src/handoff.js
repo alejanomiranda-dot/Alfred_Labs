@@ -26,6 +26,8 @@ DATOS DEL DISEÑO
 Ancho: ${params.width} mm · Alto: ${params.height} mm
 Base: ${params.thickness} mm · Relieve: ${params.relief} mm · Agujero: ${params.hole} mm
 Color base: ${params.baseColor} · Color relieve: ${params.detailColor}
+Dorso: ${params.backDecoration==='bone'?'Huesito ('+(params.backStyle==='raised'?'relieve':'grabado')+', '+params.backDepth+' mm)':'Sin decoración'}
+Si hay relieve en ambas caras, comprobar orientación y soportes. El grabado del dorso no sobresale de la base.
 
 PRIMERA MUESTRA
 La geometría cerrada no garantiza calidad de impresión ni resistencia. Imprimí y medí una muestra. Si lleva QR, verificá el destino y escaneá la pieza física antes de entregarla.

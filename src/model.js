@@ -2,12 +2,13 @@ import QRCode from 'qrcode';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import fontData from 'three/examples/fonts/gentilis_bold.typeface.json' with { type: 'json' };
 const font = new FontLoader().parse(fontData);
-export const defaults = {version:1,kind:'tag',project:'Chapita de Mora',name:'MORA',phone:'11 2345 6789',qrText:'https://example.com',caption:'HECHO CON AMOR',shape:'round',width:45,height:32,thickness:2.4,relief:0.8,hole:4,baseColor:'#e9a08c',detailColor:'#fff8e9',logoPolygons:null};
-const limits={width:[25,100],height:[25,100],thickness:[1.6,6],relief:[.4,2],hole:[2,6]};
+export const defaults = {version:2,kind:'tag',project:'Chapita de Mora',name:'MORA',phone:'11 2345 6789',qrText:'https://example.com',caption:'HECHO CON AMOR',shape:'round',width:45,height:32,thickness:2.4,relief:0.8,hole:4,baseColor:'#e9a08c',detailColor:'#fff8e9',backDecoration:'none',backStyle:'engraved',backDepth:.6,logoPolygons:null};
+const limits={width:[25,100],height:[25,100],thickness:[1.6,6],relief:[.4,2],hole:[2,6],backDepth:[.2,1.2]};
 export function validate(raw){
   const p={};
   for(const k of Object.keys(defaults))p[k]=raw[k]??defaults[k];
   if(!['tag','qr','logo'].includes(p.kind)||!['round','oval'].includes(p.shape))throw Error('Tipo de diseño o forma inválidos.');
+  if(!['none','bone'].includes(p.backDecoration)||!['engraved','raised'].includes(p.backStyle))throw Error('Decoración del dorso inválida.');
   for(const [key,[min,max]] of Object.entries(limits)){p[key]=Number(p[key]);if(!Number.isFinite(p[key])||p[key]<min||p[key]>max)throw Error(`Revisá ${key}: debe estar entre ${min} y ${max} mm.`);}
   for(const [key,max] of Object.entries({project:60,name:20,phone:24,qrText:180,caption:20})){if(typeof p[key]!=='string'||p[key].length>max)throw Error(`El campo ${key} es demasiado largo.`);}
   if(p.kind==='qr'&&!p.qrText.trim())throw Error('Agregá el texto o enlace del QR.');
@@ -29,7 +30,7 @@ export function buildModel(api,raw){
   const outline=own(new C([contour],'EvenOdd'));
   const hole=own(own(C.circle(p.hole/2,48)).translate([0,h/2-p.hole/2-2.5]));
   const base2=own(outline.subtract(hole));
-  const base=own(base2.extrude(t));
+  let base=own(base2.extrude(t));
   const details=[],warnings=[];let qr=null;
   function fit(polys,maxW,maxH,cx,cy,flip=false){
    if(!polys.length)return;
@@ -75,10 +76,28 @@ export function buildModel(api,raw){
   // Clip only as a safety check; never silently export a cut-off inscription.
   const inside=own(detail2.intersect(base2));
   if(detail2.area()-inside.area()>.01)throw Error('El contenido invade el borde o el agujero. Aumentá la base o cambiá su forma.');
-  const detail=own(own(detail2.extrude(r)).translate([0,0,t]));
+  let detail=own(own(detail2.extrude(r)).translate([0,0,t]));
+  let backArea=0;
+  if(p.backDecoration==='bone'){
+   const pieces=[own(C.square([20,5.2],true))];
+   for(const x of [-10,10])for(const y of [-2.8,2.8])pieces.push(own(own(C.circle(3.4,48)).translate([x,y])));
+   const bone=own(C.union(pieces));
+   const scale=Math.min(w*.60/26.8,h*.30/12.4);
+   const back=own(own(bone.scale([scale,scale])).translate([0,-h*.05]));
+   const insideBack=own(back.intersect(base2));
+   if(back.area()-insideBack.area()>.01)throw Error('El huesito invade el borde o el agujero. Aumentá la base.');
+   backArea=back.area();
+   if(p.backStyle==='engraved'){
+    base=own(base.subtract(own(back.extrude(p.backDepth))));
+   }else{
+    base=own(base.translate([0,0,p.backDepth]));
+    detail=own(M.union([own(detail.translate([0,0,p.backDepth])),own(back.extrude(p.backDepth))]));
+    warnings.push('Hay relieve en ambas caras. Revisá la orientación y los soportes en Bambu Studio antes de imprimir.');
+   }
+  }
   const combined=own(M.union([base,detail]));
   if(combined.status()!=='NoError'||combined.isEmpty())throw Error('No se pudo cerrar la geometría. Revisá el diseño.');
   const mesh=x=>{const m=x.getMesh();return {numProp:m.numProp,positions:new Float32Array(m.vertProperties),triangles:new Uint32Array(m.triVerts)};};
-  return {params:p,base:mesh(base),detail:mesh(detail),combined:mesh(combined),volume:combined.volume(),warnings:[...new Set(warnings)],qr};
+  return {params:p,base:mesh(base),detail:mesh(detail),combined:mesh(combined),volume:combined.volume(),backArea,totalHeight:t+r+(p.backDecoration==='bone'&&p.backStyle==='raised'?p.backDepth:0),warnings:[...new Set(warnings)],qr};
  }finally{for(const x of owned.reverse())x.delete();}
 }
