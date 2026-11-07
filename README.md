@@ -40,9 +40,11 @@ La geometría cerrada no garantiza resistencia, legibilidad ni calidad física. 
 
 ## Próxima etapa: asistente
 
-La versión local incorpora un asistente con OpenAI: pedidos escritos → propuesta de parámetros → validación geométrica → revisión y aplicación por Vero. Permite deshacer el último cambio del asistente. No reconstruye repuestos arbitrarios ni opera la impresora. Usa GPT-4.1 mini mediante Responses API y salida estructurada. Envía el pedido y los campos del diseño; no envía imágenes ni contornos. No registra solicitudes en el servidor y solicita `store:false` a la API.
+El asistente con OpenAI funciona localmente y en Vercel: pedidos escritos → propuesta de parámetros → validación geométrica → revisión y aplicación por Vero. Permite deshacer el último cambio del asistente. No reconstruye repuestos arbitrarios ni opera la impresora. Usa GPT-4.1 mini mediante Responses API y salida estructurada. Envía el pedido y los campos del diseño; no envía imágenes ni contornos. No registra solicitudes en el servidor y solicita `store:false` a la API.
 
-Para trabajar con IA, hacer doble clic en **Iniciar taller.cmd**, mantener esa ventana abierta y usar `http://127.0.0.1:5173/`. La clave se lee de `.env.local` solamente en el servidor local. Requiere Internet y saldo/cuota en el proyecto OpenAI. La versión publicada es estática: conserva diseño y exportación, pero no ejecuta el asistente ni recibe la clave local. No subir `.env.local` a servicios ni repositorios.
+Web principal: https://taller-3d-eight.vercel.app/ (requiere acceso autorizado de Vercel). El proyecto `alejano910/taller-3d` está conectado a `alejanomiranda-dot/taller-3D`, rama `main`. Vercel Authentication debe proteger **todos** los despliegues, incluida producción: el endpoint de IA depende de esa protección. `OPENAI_API_KEY` se configura como secreto del servidor en producción y preview; no usar prefijos `VITE_` para credenciales.
+
+La copia local sigue disponible: hacer doble clic en **Iniciar taller.cmd**, mantener esa ventana abierta y usar `http://127.0.0.1:5173/`. La clave local se lee de `.env.local`; también conserva los identificadores del proyecto y cuenta de Vercel. No contiene ni necesita el token de sesión de la CLI. La IA requiere Internet y saldo/cuota en OpenAI. El alojamiento anterior de Sites es estático y no ejecuta el asistente. No subir `.env.local` a repositorios.
 
 Próximas ampliaciones: nuevos tipos paramétricos, encargos, plantillas y backend alojado con credencial separada y control de uso. Medidas desconocidas deben consultarse, especialmente en repuestos.
 
