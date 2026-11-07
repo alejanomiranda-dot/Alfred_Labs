@@ -6,10 +6,10 @@ export function revisionName(project,date=new Date(),suffix=crypto.randomUUID().
  const pad=n=>String(n).padStart(2,'0');
  return `${safeName(project)}-${date.getFullYear()}${pad(date.getMonth()+1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}-${suffix}`;
 }
-export function printGuide(params){return `TALLER DE VERO — ${params.project}
+export function printGuide(params,dimensions){return `TALLER DE VERO — ${params.project}
 
 ARCHIVOS
-• .3mf: geometría para Bambu Studio, con base y relieve como partes.
+• .3mf: geometría para Bambu Studio${params.kind==='free'?', diseño libre en un color':', con base y relieve como partes'}.
 • .json: diseño editable; abrir desde Taller de Vero con «Abrir proyecto».
 Este 3MF no está laminado y no contiene el perfil de tu impresora.
 
@@ -23,8 +23,7 @@ ABRIR EN BAMBU STUDIO
 7. Seleccioná tu impresora y enviá el trabajo desde Bambu Studio. Guardá allí el proyecto preparado para conservar el laminado y la configuración.
 
 DATOS DEL DISEÑO
-Ancho: ${params.width} mm · Alto: ${params.height} mm
-Base: ${params.thickness} mm · Relieve: ${params.relief} mm · Agujero: ${params.hole} mm
+${params.kind==='free'?'Diseño libre · dimensiones XYZ: '+dimensions?.map(v=>v.toFixed(2)).join(' × ')+' mm · '+params.freeDesign.nodes.length+' operaciones':'Ancho: '+params.width+' mm · Alto: '+params.height+' mm\nBase: '+params.thickness+' mm · Relieve: '+params.relief+' mm · Agujero: '+params.hole+' mm'}
 Color base: ${params.baseColor} · Color relieve: ${params.detailColor}
 Dorso: ${params.backDecoration==='bone'?'Huesito ('+(params.backStyle==='raised'?'relieve':'grabado')+', '+params.backDepth+' mm)':'Sin decoración'}
 Si hay relieve en ambas caras, comprobar orientación y soportes. El grabado del dorso no sobresale de la base.
@@ -36,7 +35,7 @@ La geometría cerrada no garantiza calidad de impresión ni resistencia. Imprim�
 export function handoffFiles(model,stem){return {
  [`${stem}.3mf`]:threeMfBytes(model),
  [`${stem}.json`]:strToU8(JSON.stringify(model.params,null,2)),
- 'COMO-IMPRIMIR.txt':strToU8(printGuide(model.params))
+ 'COMO-IMPRIMIR.txt':strToU8(printGuide(model.params,model.dimensions))
 };}
 export function handoffZip(model,stem){return zipSync(handoffFiles(model,stem));}
 export async function writeFolder(directory,files){

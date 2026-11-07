@@ -1,13 +1,16 @@
 import QRCode from 'qrcode';
+import {validateProgram,buildSolidProgram} from './solid-program.js';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import fontData from 'three/examples/fonts/gentilis_bold.typeface.json' with { type: 'json' };
 const font = new FontLoader().parse(fontData);
-export const defaults = {version:2,kind:'tag',project:'Chapita de Mora',name:'MORA',phone:'11 2345 6789',qrText:'https://example.com',caption:'HECHO CON AMOR',shape:'round',width:45,height:32,thickness:2.4,relief:0.8,hole:4,baseColor:'#e9a08c',detailColor:'#fff8e9',backDecoration:'none',backStyle:'engraved',backDepth:.6,logoPolygons:null};
+export const defaults = {version:3,kind:'tag',project:'Chapita de Mora',name:'MORA',phone:'11 2345 6789',qrText:'https://example.com',caption:'HECHO CON AMOR',shape:'round',width:45,height:32,thickness:2.4,relief:0.8,hole:4,baseColor:'#e9a08c',detailColor:'#fff8e9',backDecoration:'none',backStyle:'engraved',backDepth:.6,logoPolygons:null,freeDesign:null};
 const limits={width:[25,100],height:[25,100],thickness:[1.6,6],relief:[.4,2],hole:[2,6],backDepth:[.2,1.2]};
 export function validate(raw){
   const p={};
   for(const k of Object.keys(defaults))p[k]=raw[k]??defaults[k];
-  if(!['tag','qr','logo'].includes(p.kind)||!['round','oval'].includes(p.shape))throw Error('Tipo de diseño o forma inválidos.');
+  if(!['tag','qr','logo','free'].includes(p.kind)||!['round','oval','bone'].includes(p.shape))throw Error('Tipo de diseño o forma inválidos.');
+  if(p.freeDesign!==null)validateProgram(p.freeDesign);
+  if(p.kind==='free'&&!p.freeDesign)throw Error('Describí la pieza libre al asistente para generar su geometría.');
   if(!['none','bone'].includes(p.backDecoration)||!['engraved','raised'].includes(p.backStyle))throw Error('Decoración del dorso inválida.');
   for(const [key,[min,max]] of Object.entries(limits)){p[key]=Number(p[key]);if(!Number.isFinite(p[key])||p[key]<min||p[key]>max)throw Error(`Revisá ${key}: debe estar entre ${min} y ${max} mm.`);}
   for(const [key,max] of Object.entries({project:60,name:20,phone:24,qrText:180,caption:20})){if(typeof p[key]!=='string'||p[key].length>max)throw Error(`El campo ${key} es demasiado largo.`);}
@@ -21,14 +24,19 @@ function shapePolygons(shapes){return shapes.flatMap(s=>{const points=s.extractP
 export function qrMatrix(text){return QRCode.create(text,{errorCorrectionLevel:'M'}).modules;}
 export function buildModel(api,raw){
  const p=validate(raw),{CrossSection:C,Manifold:M}=api,owned=[];
+ if(p.kind==='free')return buildSolidProgram(api,p.freeDesign,p);
  const own=x=>(owned.push(x),x);
  try{
   const w=p.width,h=p.height,t=p.thickness,r=p.relief;
   const contour=[];
   if(p.shape==='oval'){for(let i=0;i<128;i++){const a=2*Math.PI*i/128;contour.push([Math.cos(a)*w/2,Math.sin(a)*h/2]);}}
   else{const cr=Math.min(5,w/5,h/5);for(const [cx,cy,start] of [[w/2-cr,h/2-cr,0],[-w/2+cr,h/2-cr,90],[-w/2+cr,-h/2+cr,180],[w/2-cr,-h/2+cr,270]])for(let i=0;i<=16;i++){const a=(start+i*90/16)*Math.PI/180;contour.push([cx+cr*Math.cos(a),cy+cr*Math.sin(a)]);}}
-  const outline=own(new C([contour],'EvenOdd'));
-  const hole=own(own(C.circle(p.hole/2,48)).translate([0,h/2-p.hole/2-2.5]));
+  let outline;
+  if(p.shape==='bone'){const pieces=[own(C.square([20,5.2],true))];for(const x of [-10,10])for(const y of [-2.8,2.8])pieces.push(own(own(C.circle(3.4,48)).translate([x,y])));outline=own(own(C.union(pieces)).scale([w/26.8,h/12.4]));}
+  else outline=own(new C([contour],'EvenOdd'));
+  const holePosition=p.shape==='bone'?[-w*10/26.8,h*2.8/12.4]:[0,h/2-p.hole/2-2.5];
+  const hole=own(own(C.circle(p.hole/2,48)).translate(holePosition));
+  const holeInside=own(hole.intersect(outline));if(hole.area()-holeInside.area()>.01)throw Error('El agujero no cabe en esta forma. Reducí su diámetro o aumentá la base.');
   const base2=own(outline.subtract(hole));
   let base=own(base2.extrude(t));
   const details=[],warnings=[];let qr=null;
@@ -51,8 +59,8 @@ export function buildModel(api,raw){
    if(clean.length>14)warnings.push('Texto largo: verificá que las letras pequeñas se impriman con claridad.');
   }
   if(p.kind==='tag'){
-   text(p.name,w*.72,h*.23,-h*.005);
-   text(p.phone,w*.72,Math.min(3.1,h*.105),-h*.25);
+   text(p.name,w*(p.shape==='bone'?.48:.72),h*(p.shape==='bone'?.15:.23),h*(p.shape==='bone'?.065:-.005));
+   text(p.phone,w*(p.shape==='bone'?.48:.72),Math.min(3.1,h*(p.shape==='bone'?.075:.105)),-h*(p.shape==='bone'?.12:.25));
   }else if(p.kind==='qr'){
    const matrix=qrMatrix(p.qrText);const size=Math.min(w*(p.shape==='oval'?.62:1)-8,h-16);
    const module=size/(matrix.size+8);const polys=[];

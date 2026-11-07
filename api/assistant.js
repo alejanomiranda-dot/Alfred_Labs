@@ -14,7 +14,7 @@ export default async function handler(req,res){
  if(!req.headers['content-type']?.startsWith('application/json'))return send(415,{error:'Se requiere JSON.'});
  if(active>=2)return send(429,{error:'El asistente está ocupado. Intentá en unos segundos.'});
  active++;
- try{const body=typeof req.body==='string'?JSON.parse(req.body):req.body;if(!body||JSON.stringify(body).length>12000)return send(413,{error:'Pedido demasiado grande.'});return send(200,await proposeDesign(body,process.env.OPENAI_API_KEY));}
+ try{const body=typeof req.body==='string'?JSON.parse(req.body):req.body;if(!body||JSON.stringify(body).length>1200000)return send(413,{error:'Pedido demasiado grande.'});return send(200,await proposeDesign(body,process.env.OPENAI_API_KEY));}
  catch(error){return send(error.status||500,{error:error.name==='TimeoutError'?'La solicitud tardó demasiado. Intentá nuevamente.':error.status?error.message:'No se pudo preparar una propuesta.'});}
  finally{active--;}
 }
