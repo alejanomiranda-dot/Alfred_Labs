@@ -1,8 +1,26 @@
-# Alfred Forge — prototipo local integrado
+# Alfred Forge — prototipo local y prueba en línea
 
 Describí piezas procedurales, revisá una propuesta en el visor del taller, corregila por conversación y exportá STL/3MF y la fuente OpenSCAD. No usa Meshy ni Tripo. Las figuras orgánicas son aproximaciones procedurales; no hay reconstrucción universal ni impresión automática.
 
-## Para probar hoy
+## Prueba en línea en Vercel
+
+La rama `feature/alfred-forge-mvp` publica una Preview separada de producción. Elegí **Alfred Forge**, ingresá el mismo **código de acceso de la guía** y abrí la muestra o enviá un pedido. No hace falta instalar OpenSCAD en tu computadora para este modo.
+
+`api/forge.js` valida origen, código y cuota antes de gastar recursos. El servidor llama a OpenAI y crea una **Vercel Sandbox** efímera desde una imagen con OpenSCAD y Liberation Sans. La VM recibe únicamente fuente y runner, nunca la clave de OpenAI ni el token de Vercel; arranca con `deny-all`, sin puertos y sin persistencia. El proceso web de Vercel no ejecuta OpenSCAD.
+
+Límites de Preview: 1 vCPU/2 GiB por VM, 60 s por formato, 128 KiB de logs, 1 MiB por archivo y 230 s de vida máxima de la VM. Se detiene al finalizar, al fallar o al cancelar. El límite menor de archivo mantiene la respuesta JSON por debajo del máximo de Vercel Functions. Si la pieza es demasiado detallada, pedí menos resolución o usá el modo local.
+
+La muestra y recompilación no usan IA, pero **sí consumen cómputo de Sandbox**. Generar/corregir usa además OpenAI. Se permiten 20 pedidos/hora/IP y 1 trabajo concurrente **por instancia**; no es una cuota global entre instancias. La Preview conserva la protección de acceso de Vercel y el código de Alfred. No se cambió producción.
+
+Configuración:
+
+- `OPENAI_API_KEY` y `ASSISTANT_ACCESS_CODE`: se reutilizan del servidor; no se leen ni copian al navegador/VM.
+- `FORGE_SANDBOX_SNAPSHOT_ID`: opcional, reemplaza la imagen de prueba registrada en `server/forge-sandbox-config.js`.
+- La imagen inicial de prueba fue preparada el **8 de noviembre de 2026** y vence el **15 de noviembre**. Hay que renovarla antes de esa fecha. Contiene herramientas de sistema, sin fuentes ni piezas de usuarios.
+- Para preparar otra imagen con credenciales de desarrollo de Vercel ya configuradas: `node scripts/provision-forge-snapshot.mjs`. El script instala herramientas confiables, bloquea la red y crea una imagen de 30 días; muestra solo el identificador a configurar. No es un endpoint de la web.
+- Forge remoto se habilita automáticamente solo en `VERCEL_ENV=preview`. Para una futura producción se requeriría `FORGE_REMOTE_ENABLED=true`, después de revisar cuotas globales y completar la validación real.
+
+## Para probar localmente
 
 1. Usá la rama **`feature/alfred-forge-mvp`**, no `main`:
    ```sh
@@ -62,13 +80,13 @@ La prueba comprueba vista previa y comparación, fallo simulado que conserva pro
 
 ## Ejecución local y límites
 
-El endpoint `/api/forge` existe **solo en el servidor de desarrollo Vite**, restringido a loopback, Host `127.0.0.1`, origen del mismo servidor y JSON. Rechaza encabezados de proxy, otros métodos, solicitudes grandes y generaciones concurrentes. No se agrega ninguna función en `api/`, ni endpoint Forge de producción. La compilación se rechaza si se detecta Vercel.
+En modo local, el endpoint `/api/forge` del servidor de desarrollo Vite está restringido a loopback, Host `127.0.0.1`, origen del mismo servidor y JSON. Rechaza encabezados de proxy, otros métodos, solicitudes grandes y generaciones concurrentes. El compilador de procesos local se rechaza si se detecta Vercel. La ruta remota `api/forge.js` usa exclusivamente Sandbox y está deshabilitada en producción por defecto.
 
 OpenSCAD se ejecuta sin shell, en carpeta temporal aislada para sus salidas, sin heredar las claves ni el HOME del usuario. Se borran los temporales también al fallar. Cada formato tiene watchdog de **120 segundos**, logs hasta **256 KiB** y archivo hasta **12 MiB**. Linux usa `prlimit` cuando está disponible: **2 GiB** de espacio de direcciones, **90 s** de CPU y **12 MiB** por archivo. Windows/macOS tienen timeout y límites de salida, **sin límite duro de RAM/CPU**. Un único pedido puede tardar varios minutos entre IA y dos formatos; **Detener** cancela la consulta y el proceso actual.
 
 **Estos controles no son un sandbox.** OpenSCAD corre con los permisos del usuario local; los filtros de referencias externas no aíslan el sistema de archivos ni la red. No usar túneles, no cambiar el host a una interfaz pública y no ofrecer este proceso como servicio compartido.
 
-Antes de uso remoto: worker separado sin red ni secretos, usuario sin privilegios, sistema de archivos efímero con montaje mínimo, cuotas de CPU/RAM/tiempo/archivos, autenticación, colas y aislamiento por trabajo; verificar destrucción de procesos y contenedores. El servidor web público enviaría trabajos a ese worker y solo recibiría artefactos validados. No ejecutar código de LLM en Vercel Functions.
+El modo remoto usa el worker aislado descrito arriba. Antes de abrir el servicio a más usuarios faltan cuotas y cola globales, observabilidad de costos y validación de carga. La ejecución local sigue sin ser un sandbox: no exponer el servidor Vite con túneles.
 
 ## Pendiente de validar en la computadora de Vero
 
@@ -76,4 +94,4 @@ Antes de uso remoto: worker separado sin red ni secretos, usuario sin privilegio
 - Generación y corrección con la clave real, cuota y modelo configurados.
 - Fuente tipográfica disponible y legibilidad de VERO/ALE.
 - Apertura en Bambu Studio, perfil correcto, soportes, tolerancias e impresión física.
-- No se implementó Wi-Fi ni inicio de impresión; siempre requieren revisión y aprobación humana.
+- El acceso remoto con el código real y la generación con OpenAI deben comprobarse en la Preview. No se implementó Wi-Fi ni inicio de impresión; siempre requieren revisión y aprobación humana.

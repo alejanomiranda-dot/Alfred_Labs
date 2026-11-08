@@ -345,5 +345,5 @@ forgeUI=mountForge({host:assistant,api,getContext:()=>({current:params,pending:p
 }});
 // Keep the shared proposal reachable in either design mode.
 assistant.append($('proposalCard'));
-const forgeStart=document.createElement('button');forgeStart.id='startForge';forgeStart.className='start-card';forgeStart.innerHTML='<span>✦</span><b>Alfred Forge</b><small>Creá con OpenSCAD · experimental local.</small>';document.querySelector('.start-options').append(forgeStart);
+const forgeStart=document.createElement('button');forgeStart.id='startForge';forgeStart.className='start-card';forgeStart.innerHTML='<span>✦</span><b>Alfred Forge</b><small>Generá y corregí piezas · experimental.</small>';document.querySelector('.start-options').append(forgeStart);
 forgeStart.onclick=()=>{forgeUI.open();showWorkspaceView('chat',false);assistant.scrollIntoView({behavior:'smooth',block:'start'});};

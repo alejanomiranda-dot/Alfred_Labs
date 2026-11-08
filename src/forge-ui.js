@@ -6,30 +6,32 @@ export function mountForge({host,api,getContext,offerProposal,download,toast,onV
  const tabs=document.createElement('div');tabs.className='forge-mode-tabs';tabs.setAttribute('role','group');tabs.setAttribute('aria-label','Modo de diseño');
  tabs.innerHTML='<button type="button" class="secondary" id="cadMode" aria-pressed="true">Guía CAD</button><button type="button" class="secondary" id="forgeMode" aria-pressed="false">Alfred Forge · experimental</button>';
  const panel=document.createElement('section');panel.id='forgePanel';panel.hidden=true;
- panel.innerHTML=`<div class="chat-heading"><div><span class="eyebrow">GENERACIÓN EXPERIMENTAL LOCAL</span><h2>Alfred Forge</h2></div></div>
+ panel.innerHTML=`<div class="chat-heading"><div><span class="eyebrow">GENERACIÓN EXPERIMENTAL</span><h2>Alfred Forge</h2></div></div>
  <p>Describí tu pieza y revisá la propuesta en la mesa 3D antes de aplicarla.</p>
+ <form id="forgeAccess" class="access-panel" hidden><label>Código de acceso de Alfred<input id="forgeAccessCode" type="password" autocomplete="current-password" minlength="8" maxlength="200" required></label><button class="secondary" type="submit">Habilitar Forge</button></form>
  <p id="forgeAvailability" class="hint" role="status">Comprobando OpenSCAD…</p>
- <div class="review-actions"><button type="button" class="secondary" id="forgeExample">Abrir árbol de muestra · sin IA</button><button type="button" class="subtle" id="forgeRefresh">Comprobar instalación</button></div>
+ <div class="review-actions"><button type="button" class="secondary" id="forgeExample">Abrir árbol de muestra · sin IA</button><button type="button" class="subtle" id="forgeRefresh">Comprobar disponibilidad</button></div>
  <div id="forgeConversation" class="conversation" role="log" aria-label="Conversación con Forge" aria-live="polite"></div>
  <form id="forgeForm" class="chat-composer"><label for="forgePrompt">Tu pedido o corrección</label><textarea id="forgePrompt" rows="3" maxlength="2000" required placeholder="Un árbol de 140 mm que diga VERO y ALE, con un corazón…"></textarea><label class="forge-checkbox"><input id="forgeCorrect" type="checkbox" disabled> Corregir la versión seleccionada</label><div class="composer-actions"><button id="forgeStop" type="button" class="subtle" hidden>Detener</button><button id="forgeGenerate" type="submit" class="primary" disabled>Generar propuesta</button></div></form>
  <p id="forgeProgress" role="status"></p>
  <div id="forgeVersions" hidden><label for="forgeVersion">Versiones de esta sesión o proyecto</label><select id="forgeVersion"></select><p class="hint">Se conservan las últimas 8 fuentes. Elegí una versión y usá «Ver versión» para recompilarla sin gastar API.</p><div class="review-actions"><button type="button" class="secondary" id="forgeRestore">Ver versión</button><button type="button" class="secondary" id="forgeSource">Descargar fuente .scad</button><button type="button" class="secondary" id="forgeBundle" disabled>Descargar paquete Forge</button></div><details><summary>Fuente y notas de la versión</summary><p id="forgeDescription"></p><ul id="forgeNotes"></ul><pre id="forgeCode" class="forge-code"></pre></details></div>
  <p class="hint">Forge reconstruye su propia fuente. No modifica exactamente un STL ajeno ni incorpora automáticamente los cambios hechos después con la Guía CAD. Para esas modificaciones usá la guía habitual. Las figuras orgánicas son aproximaciones procedurales.</p>
  <p class="hint">El proyecto editable y la biblioteca conservan las fuentes al aplicar y guardar. Antes de aplicar, descargá el paquete para conservar tu propuesta. El 3MF es geometría sin laminar: revisalo en Bambu Studio.</p>
- <details><summary>Privacidad y uso local</summary><p>Al generar con IA se envían el pedido, hasta 8 mensajes recientes y la fuente seleccionada a OpenAI. Abrir la muestra o recompilar una versión no consume API. La clave permanece en el servidor local. Forge ejecuta OpenSCAD solo desde el servidor de desarrollo en 127.0.0.1; no está habilitado en el sitio público.</p></details>`;
+ <details><summary>Privacidad y ejecución</summary><p>Al generar con IA se envían el pedido, hasta 8 mensajes recientes y la fuente seleccionada a OpenAI. Abrir la muestra o recompilar una versión no consume API. La clave permanece en el servidor. En línea, las piezas se compilan en una máquina temporal aislada, sin claves ni red. Generar o recompilar en línea usa recursos de cómputo de Vercel; la versión local usa tu computadora.</p></details>`;
  host.append(tabs,cad,panel);
  const $=id=>panel.querySelector('#'+id);
  panel.querySelector('#forgeForm').after(panel.querySelector('#forgeConversation'));
  const switchMode=forge=>{cad.hidden=forge;panel.hidden=!forge;tabs.querySelector('#cadMode').setAttribute('aria-pressed',String(!forge));tabs.querySelector('#forgeMode').setAttribute('aria-pressed',String(forge));if(forge){sync();$('forgePrompt').focus();}};
  tabs.querySelector('#cadMode').onclick=()=>switchMode(false);tabs.querySelector('#forgeMode').onclick=()=>switchMode(true);
+ let accessCode='';try{accessCode=localStorage.getItem('alfred-acceso-guia')||'';}catch{}
  let status=null,busy=false,controller=null,archive=null,messages=[],epoch=-1,selectedFiles=null,selectedFileId=null,serial=0;
  function message(role,content){messages.push({role,content});messages=messages.slice(-16);const row=document.createElement('div');row.className='chat-message '+role;const who=document.createElement('strong'),p=document.createElement('p');who.textContent=role==='user'?'Vos':'Forge';p.textContent=content;row.append(who,p);$('forgeConversation').append(row);while($('forgeConversation').children.length>16)$('forgeConversation').firstChild.remove();$('forgeConversation').scrollTop=$('forgeConversation').scrollHeight;}
  function selected(){return archive?.revisions.find(r=>r.id===archive.selected);}
  function controls(){
-  const usable=status?.local&&status?.compiler;
-  $('forgeExample').disabled=busy||!status?.local;$('forgeGenerate').disabled=busy||!usable||!status?.ai;
+  const authorized=status?.local||!!accessCode;const usable=(status?.local||status?.remote)&&status?.compiler&&authorized;
+  $('forgeExample').disabled=busy||!(status?.local||(status?.remote&&status?.enabled))||!authorized;$('forgeGenerate').disabled=busy||!usable||!status?.ai;
   $('forgeRefresh').disabled=busy;$('forgeStop').hidden=!busy;
-  for(const id of ['forgeRestore','forgeVersion','forgeSource'])$(id).disabled=busy||!selected();
+  for(const id of ['forgeVersion','forgeSource'])$(id).disabled=busy||!selected();$('forgeRestore').disabled=busy||!selected()||!usable;
   $('forgeBundle').disabled=busy||selectedFileId!==archive?.selected||!selectedFiles;
   $('forgeCorrect').disabled=busy||!selected();$('forgePrompt').disabled=busy;
   $('forgeConversation').setAttribute('aria-busy',String(busy));
@@ -47,10 +49,16 @@ export function mountForge({host,api,getContext,offerProposal,download,toast,onV
   }
  }
  async function refresh(){
-  if(location.hostname!=='127.0.0.1'){status=null;$('forgeAvailability').textContent='Forge requiere la versión local: abrí http://127.0.0.1:5173 en tu computadora.';controls();return;}
-  try{const response=await fetch('/api/forge');if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error();status=await response.json();$('forgeAvailability').textContent=!status.compiler?'Falta OpenSCAD. Podés abrir la muestra precompilada; instalalo para crear o corregir piezas.':!status.ai?'OpenSCAD listo. Sin clave de IA: podés abrir la muestra y recompilar versiones.':'OpenSCAD e IA configurados. Listo para generar propuestas.';}
-  catch{status=null;$('forgeAvailability').textContent='Forge necesita el servidor local de desarrollo. Cerrá y volvé a abrir «Iniciar taller».';}controls();
+  if(!accessCode){try{accessCode=localStorage.getItem('alfred-acceso-guia')||'';}catch{}}
+  try{
+   const response=await fetch('/api/forge');if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error();status=await response.json();
+   $('forgeAccess').hidden=!status.remote||!!accessCode;
+   $('forgeAvailability').textContent=status.remote?(!status.enabled?'Forge en línea aún no está habilitado.':!accessCode?'Ingresá el mismo código de acceso de la guía para generar y compilar en línea.':!status.ai?'Compilación aislada disponible. La IA no está configurada.':'Forge en línea listo. Las piezas se compilan en una máquina aislada.'):
+    !status.compiler?'Falta OpenSCAD. Podés abrir la muestra precompilada; instalalo para crear o corregir piezas.':!status.ai?'OpenSCAD listo. Sin clave de IA: podés abrir la muestra y recompilar versiones.':'OpenSCAD e IA configurados. Listo para generar propuestas.';
+  }catch{status=null;$('forgeAvailability').textContent='No se pudo comprobar Forge. Volvé a intentar en unos segundos.';}
+  controls();
  }
+ $('forgeAccess').onsubmit=e=>{e.preventDefault();accessCode=$('forgeAccessCode').value.trim();$('forgeAccessCode').value='';try{localStorage.setItem('alfred-acceso-guia',accessCode);}catch{}refresh();};
  async function request(action,prompt=''){
   sync();if(busy)return;
   const context=getContext();if(context.busy){toast('Esperá a que termine la consulta con la Guía CAD.');return;}
@@ -63,9 +71,9 @@ export function mountForge({host,api,getContext,offerProposal,download,toast,onV
   // A local watchdog also bounds stalled HTTP connections; cancellation reaches the compiler.
   const timer=setTimeout(()=>ownController.abort(),345000);
   try{
-   const response=await fetch('/api/forge',{method:'POST',headers:{'Content-Type':'application/json'},signal:ownController.signal,body:JSON.stringify(body)});
-   if(!response.headers.get('content-type')?.includes('application/json'))throw Error('El servidor local de Forge no está disponible. Reiniciá el taller.');
-   const result=await response.json();if(!response.ok)throw Error(result.error||'No se pudo generar la pieza.');
+   const response=await fetch('/api/forge',{method:'POST',headers:{'Content-Type':'application/json',...(status?.remote&&accessCode?{'X-Access-Code':accessCode}:{})},signal:ownController.signal,body:JSON.stringify(body)});
+   if(!response.headers.get('content-type')?.includes('application/json'))throw Error('El servidor de Forge no está disponible. Volvé a comprobar la disponibilidad.');
+   const result=await response.json();if(response.status===401){accessCode='';try{localStorage.removeItem('alfred-acceso-guia');}catch{}$('forgeAccess').hidden=false;controls();}if(!response.ok)throw Error(result.error||'No se pudo generar la pieza.');
    if(requestSerial!==serial||requestEpoch!==getContext().epoch)return;
    if(JSON.stringify(getContext().current)!==base)throw Error('La pieza cambió durante la generación. Tu diseño se conservó; volvé a enviar el pedido.');
    const revision=action==='compile'?previous:revisionFromResult(result,action==='example'?'Árbol VERO y ALE · muestra':prompt);

@@ -14,7 +14,9 @@ try{
  await page.goto(url);await page.waitForSelector('#startForge');
  const initial=await page.locator('#dimensions').textContent();
  await page.locator('#startForge').click();await page.waitForFunction(()=>!document.getElementById('forgeExample').disabled);
+ const sampleResponse=page.waitForResponse(r=>r.url().endsWith('/api/forge')&&r.request().method()==='POST');
  await page.locator('#forgeExample').click();await page.waitForFunction(()=>document.getElementById('forgeProgress').textContent.startsWith('Vista previa lista'),{},{timeout:90000});
+ const sampleResult=await (await sampleResponse).json();
  assert.match(await page.locator('#proposalSummary').textContent(),/78 × 78 × 140/);
  await page.locator('[data-ghost="current"]').click();assert.equal(await page.locator('#dimensions').textContent(),initial);
  await page.locator('[data-ghost="proposal"]').click();
@@ -37,5 +39,17 @@ try{
  await page.locator('#saveQuick').click();await page.waitForFunction(()=>document.getElementById('savedCount').textContent==='1');
  await page.locator('#libraryToggle').click();await page.locator('.library-card button').filter({hasText:'Abrir'}).first().click();assert.match(await page.locator('#forgeCode').textContent(),/VERO/);
  await page.setViewportSize({width:390,height:844});await page.locator('[data-workspace-view="chat"]').click();await page.screenshot({path:'artifacts/forge/mobile.png',fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
- assert.deepEqual(errors,[]);console.log('FORGE BROWSER OK: preview, compare, failure preserves proposal, apply, downloads, restore, discard, library, mobile.');
+ await page.setViewportSize({width:1440,height:1000});
+ let remoteCode;
+ await page.route('**/api/forge',async route=>{
+  if(route.request().method()==='GET')return route.fulfill({json:{local:false,remote:true,enabled:true,compiler:true,ai:true,needsCode:true}});
+  remoteCode=route.request().headers()['x-access-code'];return route.fulfill({json:{...sampleResult,remote:true}});
+ });
+ await page.evaluate(()=>localStorage.removeItem('alfred-acceso-guia'));
+ await page.locator('#forgeRefresh').click();await page.locator('#forgeAccessCode').waitFor({state:'visible'});
+ await page.locator('#forgeAccessCode').fill('browser-test-code');await page.locator('#forgeAccess button').click();
+ await page.waitForFunction(()=>!document.getElementById('forgeGenerate').disabled);
+ await page.locator('#forgeExample').click();await page.waitForFunction(()=>document.getElementById('forgeProgress').textContent.startsWith('Vista previa lista'));
+ assert.equal(remoteCode,'browser-test-code');await page.screenshot({path:'artifacts/forge/online-ui.png',fullPage:true});
+ assert.deepEqual(errors,[]);console.log('FORGE BROWSER OK: preview, compare, failure preserves proposal, apply, downloads, restore, discard, library, mobile, remote access-code flow.');
 }catch(e){console.error(logs);throw e;}finally{await browser?.close();server.kill();}

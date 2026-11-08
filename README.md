@@ -2,11 +2,11 @@
 
 Estudio de diseño 3D asistido para la Bambu Lab A2L. Unidades: milímetros. Web: https://alfredlabs.vercel.app
 
-## Alfred Forge · experimental local
+## Alfred Forge · experimental
 
 La rama `feature/alfred-forge-mvp` integra generación OpenSCAD, vista previa sin aplicar, correcciones, historial de fuentes y exportación. Para probar hoy: `npm ci`, `npm run forge:check`, `npm run dev`; abrí `http://127.0.0.1:5173` y elegí **Alfred Forge**. La muestra incluida funciona sin IA y sin OpenSCAD instalado. En Windows: **Preparar taller.cmd**, luego **Iniciar taller.cmd**.
 
-Leé la [guía de prueba local y límites](experiments/alfred-forge/README.md). Forge es solo local; no ejecutar código generado por IA en el servidor público.
+Leé la [guía de prueba local y límites](experiments/alfred-forge/README.md). La Preview en Vercel usa un compilador aislado en Vercel Sandbox y el código de acceso de Alfred. El modo local sigue disponible; OpenSCAD nunca se ejecuta dentro de Vercel Functions.
 
 ## Uso local
 
