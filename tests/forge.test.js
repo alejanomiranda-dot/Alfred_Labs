@@ -84,3 +84,18 @@ test('muestra real: STL y 3MF cerrados, propuesta sin mutar original, guardado d
  assert.throws(()=>prepareForgeProposal(api,defaults,{...result,files:{stl:'aW52YWxpZA=='}},archive));assert.equal(JSON.stringify(defaults),before);
  await assert.rejects(()=>compileForgeSource(source+'this is not valid scad;'),e=>e.code==='compile_failed');
 });
+
+test('generar y corregir: Responses simulado, compilación real, medidas e historial sin aplicar',async t=>{
+ if(!(await forgeStatus()).compiler){t.skip('OpenSCAD no instalado.');return;}
+ const result=await runForge({action:'generate',prompt:'Bloque con agujero'},{env:{OPENAI_API_KEY:'fake-unit-test-key'},fetcher:async()=>aiReply(notes)});
+ const first=revisionFromResult(result,'Bloque con agujero','first'),archive=appendForgeRevision(null,first);
+ const before=JSON.stringify(defaults),one=prepareForgeProposal(api,defaults,result,archive);
+ assert.deepEqual(one.built.dimensions.map(Math.round),[30,20,10]);
+ const scad='$fn=24; difference(){cube([30,20,18]);translate([10,10,-1])cylinder(h=20,d=4);}';
+ let received;
+ const corrected=await runForge({action:'generate',prompt:'Mantené el agujero y subí el alto a 18 mm',previous:result.scad,history:[{role:'user',content:'Bloque con agujero'}]},{env:{OPENAI_API_KEY:'fake-unit-test-key'},fetcher:async(_url,init)=>{received=JSON.parse(init.body);return aiReply({...notes,scad,description:'Bloque de 30 × 20 × 18 mm'});}});
+ assert.equal(JSON.parse(received.input.at(-1).content).fuenteAnterior,source);
+ const second=revisionFromResult(corrected,'Alto de 18 mm','second'),two=prepareForgeProposal(api,defaults,corrected,appendForgeRevision(archive,second));
+ assert.deepEqual(two.built.dimensions.map(Math.round),[30,20,18]);assert.equal(two.candidate.forge.revisions.length,2);
+ assert.equal(JSON.stringify(defaults),before);assert.equal(one.candidate.forge.revisions.length,1);
+});
