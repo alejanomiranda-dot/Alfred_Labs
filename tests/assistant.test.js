@@ -3,9 +3,18 @@ import assert from 'node:assert/strict';
 import {proposeDesign} from '../server/assistant.js';
 import {defaults} from '../src/model.js';
 test('una propuesta sin cambios nunca habilita aplicar aunque la IA lo afirme',async()=>{const response={message:'Agregué algo',canApply:true,params:defaults};const r=await proposeDesign({prompt:'Agregar un adorno',params:defaults},'test-key',async()=>({ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify(response)}]}]})}));assert.equal(r.canApply,false);assert.match(r.message,/no contiene cambios/);});
+test('la propuesta sin aplicar llega como contexto separado y circular tiene una opción inequívoca',async()=>{
+ let sent;const pending={...defaults,shape:'circle',width:40,height:40,importedMesh:'private-mesh',logoPolygons:'private-logo'};
+ await proposeDesign({prompt:'Mejor de 35 mm',params:defaults,pendingProposal:pending},'test-key',async(_,opts)=>{sent=JSON.parse(opts.body);return {ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify({message:'Propuesta',canApply:false,params:defaults})}]}]})};});
+ const request=JSON.parse(sent.input.at(-1).content[0].text);assert.equal(request.disenoActual.shape,'round');assert.equal(request.propuestaPendiente.shape,'circle');assert.ok(!JSON.stringify(request).includes('private-'));assert.ok(sent.text.format.schema.properties.params.properties.shape.enum.includes('circle'));
+});
 test('el asistente envía campos permitidos, no imágenes ni contornos',async()=>{let payload;const fetcher=async(url,options)=>{payload=JSON.parse(options.body);return {ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify({message:'Propuesta',canApply:false,params:{name:'LUNA'}})}]}]})};};const result=await proposeDesign({prompt:'Una chapita',params:{name:'MORA',logoPolygons:[[1,2]],image:'private-image'}},'test-key',fetcher);assert.equal(result.canApply,false);assert.equal(payload.store,false);assert.ok(!payload.input.includes('logoPolygons'));assert.ok(!payload.input.includes('private-image'));});
 test('errores de cuota se explican sin exponer la respuesta del proveedor',async()=>{await assert.rejects(proposeDesign({prompt:'Una chapita'},'test-key',async()=>({ok:false,status:429,json:async()=>({error:{code:'insufficient_quota',message:'sensitive upstream details'}})})),error=>error.status===502&&error.message.includes('créditos')&&!error.message.includes('sensitive'));});
 test('no se hacen solicitudes sin clave o con pedido vacío',async()=>{const fail=()=>{throw Error('No debería llamarse');};await assert.rejects(proposeDesign({prompt:'Hola'},'',fail),/clave/);await assert.rejects(proposeDesign({prompt:''},'test-key',fail),/pedido/);});
+test('detener la consulta cancela también la solicitud al proveedor',async()=>{
+ const controller=new AbortController();
+ await assert.rejects(proposeDesign({prompt:'Una chapita'},'test-key',async(_,opts)=>{controller.abort();opts.signal.throwIfAborted();},{signal:controller.signal}),{name:'AbortError'});
+});
 test('referencia explícita y conversación llegan con roles seguros; imágenes inválidas no salen',async()=>{
  let payload;const fetcher=async(url,opts)=>{payload=JSON.parse(opts.body);return {ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify({message:'¿Qué ancho necesitás?',canApply:false,params:defaults})}]}]})};};
  const imageDataUrl='data:image/png;base64,aGVsbG8=';

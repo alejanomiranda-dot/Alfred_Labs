@@ -12,7 +12,8 @@ export function createViewerTools({host,scene,camera,renderer,group,markDirty,me
  const state={ruler:false,dims:false,section:null,ghostMode:'both',points:[],labels:[]};
  const plane=new THREE.Plane(new THREE.Vector3(0,0,-1),0);
  const dispose=g=>{for(const c of [...g.children]){g.remove(c);c.traverse?.(o=>{o.geometry?.dispose();o.material?.dispose?.();});}};
- const bounds=()=>new THREE.Box3().setFromObject(group);
+ const activeGroup=()=>ghost.children.length&&state.ghostMode!=='current'?ghost:group;
+ const bounds=()=>new THREE.Box3().setFromObject(activeGroup());
  const sizeOf=()=>{const b=bounds();return b.isEmpty()?50:b.getSize(new THREE.Vector3()).length();};
 
  function label(text,position,kind='dim'){const el=document.createElement('span');el.className='viewport-label '+kind;el.textContent=text;labels.append(el);state.labels.push({el,position:position.clone()});}
@@ -31,7 +32,7 @@ export function createViewerTools({host,scene,camera,renderer,group,markDirty,me
 
  // ---- ruler: two clicks on the piece measure the straight distance
  const ray=new THREE.Raycaster(),pointer=new THREE.Vector2();let down=null;
- function pick(event){const r=renderer.domElement.getBoundingClientRect();pointer.set((event.clientX-r.left)/r.width*2-1,-(event.clientY-r.top)/r.height*2+1);ray.setFromCamera(pointer,camera);const hit=ray.intersectObjects(group.children,false).find(h=>!state.section||plane.distanceToPoint(h.point)>=-1e-6);return hit?.point;}
+ function pick(event){const r=renderer.domElement.getBoundingClientRect();pointer.set((event.clientX-r.left)/r.width*2-1,-(event.clientY-r.top)/r.height*2+1);ray.setFromCamera(pointer,camera);const hit=ray.intersectObjects(activeGroup().children.filter(m=>m.isMesh),false).find(h=>!state.section||plane.distanceToPoint(h.point)>=-1e-6);return hit?.point;}
  function drawRuler(){dispose(marks);clearLabels(l=>l.el.classList.contains('ruler'));const r=sizeOf()*.008+.15;
   for(const p of state.points){const dot=new THREE.Mesh(new THREE.SphereGeometry(r,16,12),new THREE.MeshBasicMaterial({color:0xffc857,depthTest:false}));dot.position.copy(p);dot.renderOrder=6;marks.add(dot);}
   if(state.points.length===2){const [a,b]=state.points,l=line(a,b,0xffc857);l.renderOrder=6;marks.add(l);const d=a.distanceTo(b),dx=Math.abs(a.x-b.x),dy=Math.abs(a.y-b.y),dz=Math.abs(a.z-b.z);label(fmt(d)+' mm  ·  X '+fmt(dx)+'  Y '+fmt(dy)+'  Z '+fmt(dz),a.clone().add(b).multiplyScalar(.5),'ruler');}
@@ -45,11 +46,11 @@ export function createViewerTools({host,scene,camera,renderer,group,markDirty,me
   markDirty();}
 
  // ---- proposal preview
- function setGhost(model,colors){dispose(ghost);if(!model)return applyGhostMode();
+ function setGhost(model,colors){state.points=[];drawRuler();dispose(ghost);if(!model)return applyGhostMode();
   for(const part of colors){if(!part.mesh.triangles.length)continue;const m=new THREE.Mesh(meshGeometry(part.mesh),new THREE.MeshStandardMaterial({color:part.color,transparent:true,opacity:.55,roughness:.5,emissive:0x1f6f55,emissiveIntensity:.35,depthWrite:false,flatShading:true}));m.renderOrder=2;ghost.add(m);}
   const edges=new THREE.LineSegments(new THREE.EdgesGeometry(meshGeometry(colors[0].mesh),25),new THREE.LineBasicMaterial({color:0x93f5ce,transparent:true,opacity:.9}));ghost.add(edges);
   applyGhostMode();applySection();}
- function applyGhostMode(){const has=ghost.children.length>0;ghost.visible=has&&state.ghostMode!=='current';group.visible=!has||state.ghostMode!=='proposal';for(const m of group.children)if(m.material){m.material.transparent=has&&state.ghostMode==='both';m.material.opacity=has&&state.ghostMode==='both'?.35:1;}markDirty();}
+ function applyGhostMode(){const has=ghost.children.length>0;ghost.visible=has&&state.ghostMode!=='current';group.visible=!has||state.ghostMode!=='proposal';for(const m of group.children)if(m.material){m.material.transparent=has&&state.ghostMode==='both';m.material.opacity=has&&state.ghostMode==='both'?.35:1;}heat.visible=!has||state.ghostMode==='current';drawDims();markDirty();}
 
  // ---- printability heat map
  function setHeat(meshes){dispose(heat);for(const {mesh,color} of meshes||[]){if(!mesh.triangles.length)continue;const m=new THREE.Mesh(meshGeometry(mesh),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.75,depthTest:true,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2,side:THREE.DoubleSide}));m.renderOrder=3;heat.add(m);}markDirty();}
@@ -62,7 +63,7 @@ export function createViewerTools({host,scene,camera,renderer,group,markDirty,me
   setDims(on){state.dims=on;drawDims();markDirty();},
   setSection(section){state.section=section;applySection();},
   setGhost,
-  setGhostMode(mode){state.ghostMode=mode;applyGhostMode();},
+  setGhostMode(mode){state.ghostMode=mode;state.points=[];drawRuler();applyGhostMode();applySection();},
   setHeat,
   hasGhost:()=>ghost.children.length>0
  };

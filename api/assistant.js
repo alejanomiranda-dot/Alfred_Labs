@@ -25,7 +25,8 @@ export default async function handler(req,res){
  if(count(usage,ip,now).length>=maxRequests)return send(429,{error:'Se alcanzó el límite de pedidos de esta hora. Probá más tarde.'});
  if(active>=2)return send(429,{error:'El asistente está ocupado. Intentá en unos segundos.'});
  usage.get(ip).push(now);active++;
- try{const body=typeof req.body==='string'?JSON.parse(req.body):req.body;if(!body||JSON.stringify(body).length>1200000)return send(413,{error:'Pedido demasiado grande.'});return send(200,await proposeDesign(body,process.env.OPENAI_API_KEY));}
+ const controller=new AbortController();res.on?.('close',()=>{if(!res.writableEnded)controller.abort();});
+ try{const body=typeof req.body==='string'?JSON.parse(req.body):req.body;if(!body||JSON.stringify(body).length>1200000)return send(413,{error:'Pedido demasiado grande.'});return send(200,await proposeDesign(body,process.env.OPENAI_API_KEY,fetch,{signal:controller.signal}));}
  catch(error){return send(error.status||500,{error:error.name==='TimeoutError'?'La solicitud tardó demasiado. Intentá nuevamente.':error.status?error.message:'No se pudo preparar una propuesta.'});}
  finally{active--;}
 }

@@ -28,6 +28,8 @@ Abrir `http://127.0.0.1:5173/` (o hacer doble clic en **Iniciar taller.cmd**). `
 - **Multicolor**: color por operación, hasta 4 colores (AMS). El 3MF lleva una parte por color.
 - **Ajuste directo** de cada operación, con deshacer y rehacer.
 - Cada propuesta de la guía se construye y se compara con las medidas que declaró; si no coincide, se corrige sola antes de mostrarse. Se ve como **vista previa** translúcida antes de aplicarla.
+- **Chat con Alfred**: Enter envía, Shift + Enter agrega una línea. Podés detener la consulta, ajustar una propuesta pendiente o hacer preguntas sin perderla. **Aplicar** cambia la pieza; **Descartar** conserva el diseño actual. En celular, las pestañas alternan entre el chat y la pieza 3D. Ajustes y fabricación se abren a demanda.
+- **Formas precisas**: «Redonda · círculo» tiene un único diámetro; «Rectángulo redondeado» conserva la forma de los proyectos anteriores (`round`). «Ovalada» permite ancho y alto distintos. Las cotas del visor distinguen propuesta sin aplicar y pieza actual.
 
 ## Revisión y salida
 
@@ -41,6 +43,8 @@ Abrir `http://127.0.0.1:5173/` (o hacer doble clic en **Iniciar taller.cmd**). `
 ## Asistente y publicación
 
 OpenAI Responses API con salida estructurada (`gpt-4.1` por defecto; `OPENAI_MODEL` lo cambia). `store:false`. Se envían el pedido, la conversación reciente, el diseño (sin mallas importadas ni contornos de logo), el estilo y la imagen adjunta.
+
+`node scripts/evaluate-assistant.mjs` ejecuta siete casos reales con la clave local (consume API); no forma parte de `npm test`. Comprueba interpretación de círculo y diámetro, ajustes de una propuesta sin aplicar, consultas sin cambios, óvalo, grabado del dorso y caja abierta. También construye los sólidos para verificar las propuestas.
 
 Vercel: proyecto `alejano910/taller-3d`, conectado a `alejanomiranda-dot/taller-3D` (rama `main`; cada push publica). El sitio es público; el asistente exige `ASSISTANT_ACCESS_CODE` (variable secreta del servidor, mínimo 8 caracteres). Sin ella, el asistente queda cerrado. Limita intentos fallidos y pedidos por hora por instancia; el tope de gasto mensual en OpenAI es el límite definitivo. `OPENAI_API_KEY` y `ASSISTANT_ACCESS_CODE` nunca con prefijo `VITE_`. La copia local lee ambas de `.env.local` (no se sube).
 

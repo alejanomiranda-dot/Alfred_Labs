@@ -9,7 +9,7 @@ const limits={width:[25,100],height:[25,100],thickness:[1.6,6],relief:[.4,2],hol
 export function validate(raw){
   const p={};
   for(const k of Object.keys(defaults))p[k]=raw[k]??defaults[k];
-  if(!['tag','qr','logo','free'].includes(p.kind)||!['round','oval','bone'].includes(p.shape))throw Error('Tipo de diseño o forma inválidos.');
+  if(!['tag','qr','logo','free'].includes(p.kind)||!['circle','round','oval','bone'].includes(p.shape))throw Error('Tipo de diseño o forma inválidos.');
   if(p.importedMesh!==null){const m=p.importedMesh;if(!m||typeof m.name!=='string'||m.name.length>120||!Array.isArray(m.vertices)||!Array.isArray(m.triangles)||m.vertices.length%3||m.triangles.length%3||!m.triangles.length||m.triangles.length>maxStoredTriangles*3)throw Error('La pieza importada es inválida o demasiado compleja.');if(!m.vertices.every(v=>typeof v==='number'&&Number.isFinite(v)&&Math.abs(v)<=1000))throw Error('La pieza importada tiene coordenadas inválidas.');const count=m.vertices.length/3;if(!m.triangles.every(v=>Number.isInteger(v)&&v>=0&&v<count))throw Error('La pieza importada tiene triángulos inválidos.');}
   if(p.freeDesign!==null)validateProgram(withImport(p.freeDesign,p));
   if(p.kind!=='free')p.importedMesh=null;
@@ -18,6 +18,8 @@ export function validate(raw){
   if(p.kind==='free'&&!p.freeDesign)throw Error('Describí la pieza libre al asistente para generar su geometría.');
   if(!['none','bone'].includes(p.backDecoration)||!['engraved','raised'].includes(p.backStyle))throw Error('Decoración del dorso inválida.');
   for(const [key,[min,max]] of Object.entries(limits)){p[key]=p.kind==='free'?defaults[key]:Number(p[key]);if(!Number.isFinite(p[key])||p[key]<min||p[key]>max)throw Error(`Revisá ${key}: debe estar entre ${min} y ${max} mm.`);}
+  // Legacy "round" projects are rounded rectangles. A circle has one diameter.
+  if(p.kind!=='free'&&p.shape==='circle')p.height=p.width;
   for(const [key,max] of Object.entries({project:60,name:20,phone:24,qrText:180,caption:20})){if(typeof p[key]!=='string'||p[key].length>max)throw Error(`El campo ${key} es demasiado largo.`);}
   if(p.kind==='qr'&&!p.qrText.trim())throw Error('Agregá el texto o enlace del QR.');
   if(p.kind==='tag'&&!p.name.trim())throw Error('Agregá el nombre de la mascota.');
@@ -34,7 +36,7 @@ export function buildModel(api,raw){
  try{
   const w=p.width,h=p.height,t=p.thickness,r=p.relief;
   const contour=[];
-  if(p.shape==='oval'){for(let i=0;i<128;i++){const a=2*Math.PI*i/128;contour.push([Math.cos(a)*w/2,Math.sin(a)*h/2]);}}
+  if(p.shape==='oval'||p.shape==='circle'){for(let i=0;i<128;i++){const a=2*Math.PI*i/128;contour.push([Math.cos(a)*w/2,Math.sin(a)*h/2]);}}
   else{const cr=Math.min(5,w/5,h/5);for(const [cx,cy,start] of [[w/2-cr,h/2-cr,0],[-w/2+cr,h/2-cr,90],[-w/2+cr,-h/2+cr,180],[w/2-cr,-h/2+cr,270]])for(let i=0;i<=16;i++){const a=(start+i*90/16)*Math.PI/180;contour.push([cx+cr*Math.cos(a),cy+cr*Math.sin(a)]);}}
   let outline;
   if(p.shape==='bone'){const pieces=[own(C.square([20,5.2],true))];for(const x of [-10,10])for(const y of [-2.8,2.8])pieces.push(own(own(C.circle(3.4,48)).translate([x,y])));outline=own(own(C.union(pieces)).scale([w/26.8,h/12.4]));}
@@ -67,7 +69,7 @@ export function buildModel(api,raw){
    text(p.name,w*(p.shape==='bone'?.48:.72),h*(p.shape==='bone'?.15:.23),h*(p.shape==='bone'?.065:-.005));
    text(p.phone,w*(p.shape==='bone'?.48:.72),Math.min(3.1,h*(p.shape==='bone'?.075:.105)),-h*(p.shape==='bone'?.12:.25));
   }else if(p.kind==='qr'){
-   const matrix=qrMatrix(p.qrText);const size=Math.min(w*(p.shape==='oval'?.62:1)-8,h-16);
+   const matrix=qrMatrix(p.qrText);const size=Math.min(w*(['oval','circle'].includes(p.shape)?.62:1)-8,h-16);
    const module=size/(matrix.size+8);const polys=[];
    for(let row=0;row<matrix.size;row++)for(let col=0;col<matrix.size;col++)if(matrix.get(row,col)){
     const x=(col+4)*module-size/2,y=size/2-(row+5)*module-3;
