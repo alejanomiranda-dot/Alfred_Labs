@@ -22,7 +22,7 @@ Configuración:
 
 ## Para probar localmente
 
-1. Usá la rama **`feature/alfred-forge-mvp`**, no `main`:
+1. Usá la rama **`feature/alfred-forge-mvp`** mientras el PR #2 siga abierto. Incluye también el motor creativo integrado desde `main`:
    ```sh
    git clone --branch feature/alfred-forge-mvp https://github.com/alejanomiranda-dot/taller-3D.git
    cd taller-3D
@@ -42,12 +42,13 @@ Configuración:
 
 - Node.js **22.12 o posterior** (recomendado Node 24 LTS).
 - OpenSCAD **2021.01 o posterior**, desde https://openscad.org/downloads.html. Linux/macOS: `openscad` en PATH. Windows: se busca `C:\Program Files\OpenSCAD\openscad.com`, luego `openscad.com` en PATH.
+- En Windows también se detecta primero la copia portable en `.tools/openscad/openscad.com`, sin instalar a nivel del sistema. `OPENSCAD_BIN` tiene prioridad sobre las ubicaciones automáticas.
 - Una clave propia de OpenAI en **`.env.local` en la raíz**, solo del lado del servidor. Nunca compartirla por chat ni subirla a Git. Nunca usar `VITE_OPENAI_API_KEY`.
 - Si OpenSCAD está en otra ubicación, definí `OPENSCAD_BIN` en ese mismo archivo. En Windows, por ejemplo: `OPENSCAD_BIN="D:/Aplicaciones/OpenSCAD/openscad.com"`.
 - `OPENAI_MODEL` opcional; se conserva `gpt-4.1` como valor del prototipo existente. La disponibilidad depende del proyecto de OpenAI.
 - Reiniciá el servidor después de cambiar `.env.local` y usá **Comprobar instalación**. La presencia de clave no confirma saldo, permisos ni funcionamiento de la API.
 
-Al generar con IA, cada pedido hace **una sola solicitud Responses** con salida JSON estructurada y `store:false`; no hay reintentos con gasto automático. Se envían el pedido, hasta 8 mensajes recientes y, cuando elegís corregir, la fuente completa de la versión seleccionada. No se envían claves al navegador ni mallas a OpenAI. No hay clave configurada en el entorno de desarrollo de esta entrega: las pruebas de proveedor se hacen con respuestas simuladas, sin gastar API.
+Al generar con IA, cada pedido hace **una sola solicitud Responses** con salida JSON estructurada y `store:false`; no hay reintentos con gasto automático. Se envían el pedido, hasta 8 mensajes recientes y, cuando elegís corregir, la fuente completa de la versión seleccionada. No se envían claves al navegador ni mallas a OpenAI. Las pruebas automáticas habituales usan respuestas simuladas. La aceptación local en Windows del 08/11/2026 usó una clave real autorizada: generación, corrección, Guía CAD y relieve visual. Ver [evidencia y reproducción](../../PRUEBAS-LOCALES.md).
 
 ## Correcciones y versiones
 
@@ -88,10 +89,9 @@ OpenSCAD se ejecuta sin shell, en carpeta temporal aislada para sus salidas, sin
 
 El modo remoto usa el worker aislado descrito arriba. Antes de abrir el servicio a más usuarios faltan cuotas y cola globales, observabilidad de costos y validación de carga. La ejecución local sigue sin ser un sandbox: no exponer el servidor Vite con túneles.
 
-## Pendiente de validar en la computadora de Vero
+## Validación local y pendiente físico
 
-- Windows: instalación real de Node/OpenSCAD y doble clic en los `.cmd`.
-- Generación y corrección con la clave real, cuota y modelo configurados.
+- Windows: se verificaron Node 24.11.1, OpenSCAD portable 2021.01, compilación, generación y corrección reales desde Chromium. La ejecución por doble clic en los `.cmd` no se verificó.
 - Fuente tipográfica disponible y legibilidad de VERO/ALE.
 - Apertura en Bambu Studio, perfil correcto, soportes, tolerancias e impresión física.
-- La generación remota con OpenAI deben comprobarse en la Preview. No se implementó Wi-Fi ni inicio de impresión; siempre requieren revisión y aprobación humana.
+- La generación remota con OpenAI debe comprobarse en la Preview. No se implementó Wi-Fi ni inicio de impresión; siempre requieren revisión y aprobación humana.

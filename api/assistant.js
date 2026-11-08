@@ -1,5 +1,5 @@
-import {proposeDesign} from '../server/assistant.js';
-export const config={maxDuration:60};
+import {designService} from '../server/design-service.js';
+export const config={maxDuration:180};
 // Usage limits remain in place; the app does not require an access code.
 let active=0;
 const usage=new Map(),hour=3600e3,maxRequests=120;
@@ -18,7 +18,7 @@ export default async function handler(req,res){
  if(active>=2)return send(429,{error:'El asistente está ocupado. Intentá en unos segundos.'});
  usage.get(ip).push(now);active++;
  const controller=new AbortController();res.on?.('close',()=>{if(!res.writableEnded)controller.abort();});
- try{const body=typeof req.body==='string'?JSON.parse(req.body):req.body;if(!body||JSON.stringify(body).length>1200000)return send(413,{error:'Pedido demasiado grande.'});return send(200,await proposeDesign(body,process.env.OPENAI_API_KEY,fetch,{signal:controller.signal}));}
+ try{const body=typeof req.body==='string'?JSON.parse(req.body):req.body;if(!body||JSON.stringify(body).length>1200000)return send(413,{error:'Pedido demasiado grande.'});return send(200,await designService(body,process.env,fetch,{signal:controller.signal}));}
  catch(error){return send(error.status||500,{error:error.name==='TimeoutError'?'La solicitud tardó demasiado. Intentá nuevamente.':error.status?error.message:'No se pudo preparar una propuesta.'});}
  finally{active--;}
 }

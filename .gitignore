@@ -10,3 +10,4 @@ dist/
 # Generated verification/printing artifacts
 muestras/
 artifacts/
+.tools/

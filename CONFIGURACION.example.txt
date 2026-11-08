@@ -11,5 +11,9 @@ Si el puerto está ocupado, usar el taller ya iniciado o cerrar su ventana anter
 Verificación de cambios: npm run verify.
 
 La aplicación web publicada conserva herramientas de diseño y exportación.
-El asistente con IA utiliza el servidor local y requiere conexión a Internet.
+El asistente con IA utiliza el servidor local o la API de Vercel y requiere conexión a Internet.
+La generación de relieves visuales utiliza la misma OPENAI_API_KEY.
+Modelo visual predeterminado: gpt-image-1.5. Variable opcional: OPENAI_IMAGE_MODEL.
+La cuenta de OpenAI debe tener acceso a generación de imágenes y créditos.
+También se puede construir un relieve directamente desde una imagen adjunta.
 El envío a impresora se realiza desde Bambu Studio después de revisar el laminado.

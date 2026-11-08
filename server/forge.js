@@ -12,7 +12,11 @@ const fail=(message,status=400,code='invalid_request')=>Object.assign(Error(mess
 function localOnly(){if(process.env.VERCEL||process.env.VERCEL_ENV)throw fail('Forge solo se ejecuta en una computadora local.',403,'local_only');}
 export function forgeBinary(env=process.env){
  if(env.OPENSCAD_BIN)return env.OPENSCAD_BIN;
- if(process.platform==='win32'){const installed=path.join(process.env.ProgramFiles||'C:\\Program Files','OpenSCAD','openscad.com');return existsSync(installed)?installed:'openscad.com';}
+ if(process.platform==='win32'){
+  const portable=path.resolve(import.meta.dirname,'../.tools/openscad/openscad.com');
+  const installed=path.join(process.env.ProgramFiles||'C:\\Program Files','OpenSCAD','openscad.com');
+  return existsSync(portable)?portable:existsSync(installed)?installed:'openscad.com';
+ }
  return 'openscad';
 }
 // Do not give compiler children API keys, proxy credentials or the user's HOME.
@@ -120,7 +124,7 @@ export async function runForge(raw,{env=process.env,signal,fetcher,runner,timeou
   const base=new URL('../experiments/alfred-forge/examples/compiled/',import.meta.url);
   const manifest=JSON.parse(await fs.readFile(new URL('manifest.json',base),'utf8'));
   const hash=value=>createHash('sha256').update(value).digest('hex');
-  if(hash(result.scad)!==manifest.sourceSha256)throw fail('La muestra compilada no coincide con su fuente.',500,'sample_mismatch');
+  if(hash(result.scad.replace(/\r\n/g,'\n'))!==manifest.sourceSha256)throw fail('La muestra compilada no coincide con su fuente.',500,'sample_mismatch');
   files={};for(const ext of ['stl','3mf']){const bytes=await fs.readFile(new URL('arbol-vero-ale.'+ext,base));if(hash(bytes)!==manifest.files[ext])throw fail('Muestra dañada.',500,'sample_mismatch');files[ext]=bytes.toString('base64');}
   precompiled=true;result.caveats.push('Muestra precompilada: instalá OpenSCAD para generar o corregir otras piezas.');
  }

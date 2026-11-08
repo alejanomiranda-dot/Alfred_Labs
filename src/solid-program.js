@@ -1,6 +1,6 @@
 // Declarative CAD. Data only: no eval, scripts, imports, filesystem or network.
 import {shapeSection,fontNames,iconNames,missingGlyph} from './shapes.js';
-export const nodeTypes=['imported','box','open_box','cylinder','open_cylinder','revolve','sphere','extrude','text','engrave_text','emboss_text','union','subtract','intersect'];
+export const nodeTypes=['imported','box','open_box','cylinder','open_cylinder','revolve','sphere','ellipsoid','capsule','torus','extrude','text','engrave_text','emboss_text','union','subtract','intersect'];
 export const faces=['top','bottom','front','back','left','right','around'];
 const faceTypes=['engrave_text','emboss_text'];
 const booleanTypes=['union','subtract','intersect'];
@@ -13,12 +13,14 @@ export function validateProgram(program){
  program.nodes.forEach((n,i)=>{
   if(!n||!nodeTypes.includes(n.type))throw Error('Operación CAD no disponible.');
   for(const [key,range] of [['position',[-500,500]],['rotation',[-360,360]]]){if(!Array.isArray(n[key])||n[key].length!==3)throw Error('Transformación inválida.');n[key].forEach(v=>number(v,...range,key));}
-  if(['box','open_box'].includes(n.type)){if(!Array.isArray(n.size)||n.size.length!==3)throw Error('Faltan las tres medidas del volumen.');n.size.forEach(v=>number(v,.2,300,'Medida'));}
+  if(['box','open_box','ellipsoid'].includes(n.type)){if(!Array.isArray(n.size)||n.size.length!==3)throw Error('Faltan las tres medidas del volumen.');n.size.forEach(v=>number(v,.2,300,'Medida'));}
   if(['open_box','open_cylinder'].includes(n.type)){number(n.wallThickness,.2,20,'Pared');number(floorOf(n),.2,50,'Fondo');}
   if(n.type==='open_box'&&(n.wallThickness*2>=Math.min(n.size[0],n.size[1])||floorOf(n)>=n.size[2]))throw Error('El espesor no deja espacio interior en la caja.');
-  if(['cylinder','open_cylinder','sphere'].includes(n.type))number(n.radius,.1,150,'Radio');
+  if(['cylinder','open_cylinder','sphere','capsule','torus'].includes(n.type))number(n.radius,.1,150,'Radio');
   if(['cylinder','open_cylinder'].includes(n.type))number(n.radiusTop,n.type==='open_cylinder'?.1:0,150,'Radio superior');
-  if(['cylinder','open_cylinder','extrude','text'].includes(n.type))number(n.height,.2,300,'Altura');
+  if(['cylinder','open_cylinder','capsule','extrude','text'].includes(n.type))number(n.height,.2,300,'Altura');
+  if(n.type==='torus')number(n.radiusTop,.2,n.radius-.2,'Radio del tubo del anillo');
+  if(n.type==='capsule'&&n.height<n.radius*2)throw Error('La cápsula necesita un alto de al menos dos radios.');
   if(n.type==='open_cylinder'&&(n.wallThickness+.2>Math.min(n.radius,n.radiusTop)||floorOf(n)>=n.height))throw Error('El espesor no deja espacio interior en el recipiente.');
   if(n.type==='imported'&&!program.hasImported)throw Error('El proyecto no tiene una pieza importada.');
   if(n.type==='revolve'){
@@ -161,6 +163,10 @@ export function buildSolidProgram(api,program,params){
     }
    }
    if(n.type==='sphere')solid=own(M.sphere(n.radius,48));
+   if(n.type==='ellipsoid')solid=own(own(M.sphere(1,64)).scale(n.size.map(v=>v/2)));
+   if(n.type==='capsule'){if(n.height<n.radius*2)throw Error('La cápsula necesita un alto de al menos dos radios.');const straight=n.height-2*n.radius;const pieces=[own(own(M.sphere(n.radius,48)).translate([0,0,straight/2])),own(own(M.sphere(n.radius,48)).translate([0,0,-straight/2]))];if(straight>.001)pieces.push(own(M.cylinder(straight,n.radius,n.radius,64,true)));solid=own(M.union(pieces));}
+   if(n.type==='torus'){number(n.radiusTop,.2,n.radius-.2,'Radio del tubo del anillo');solid=own(own(own(C.circle(n.radiusTop,48)).translate([n.radius,0])).revolve(96));}
+
    if(n.type==='extrude')solid=own(own(new C([n.points],'EvenOdd')).extrude(n.height));
    if(n.type==='text')solid=own(shapeSection(C,own,n).extrude(n.height));
    if(faceTypes.includes(n.type))({solid,region}=textOnFace(M,C,own,solids[n.inputs[0]],n,notes));

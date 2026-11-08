@@ -12,6 +12,8 @@ try{
  browser=await chromium.launch({...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}),headless:true,args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
  const page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownloads:true});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(url);await page.waitForSelector('#startForge');
+ assert.equal(await page.locator('#conversation .assistant').count(),0);
+ assert.ok((await page.locator('#conversation .chat-message').first().boundingBox()).height<180,'El mensaje no debe heredar el tamaño del panel de chat');
  const initial=await page.locator('#dimensions').textContent();
  await page.locator('#startForge').click();await page.waitForFunction(()=>!document.getElementById('forgeExample').disabled);
  const sampleResponse=page.waitForResponse(r=>r.url().endsWith('/api/forge')&&r.request().method()==='POST');
@@ -51,5 +53,22 @@ try{
  await page.waitForFunction(()=>!document.getElementById('forgeGenerate').disabled);
  await page.locator('#forgeExample').click();await page.waitForFunction(()=>document.getElementById('forgeProgress').textContent.startsWith('Vista previa lista'));
  assert.equal(remoteHeaders['x-access-code'],undefined);await page.screenshot({path:'artifacts/forge/online-ui.png',fullPage:true});
- assert.deepEqual(errors,[]);console.log('FORGE BROWSER OK: preview, compare, failure preserves proposal, apply, downloads, restore, discard, library, mobile, remote flow without access code.');
+ // Exercise the merged visual path on the same page after a Forge proposal.
+ await page.locator('#cadMode').click();
+ const reference=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=c.height=32;const ctx=c.getContext('2d');ctx.fillStyle='black';ctx.fillRect(0,0,32,32);ctx.fillStyle='white';ctx.beginPath();ctx.arc(16,16,10,0,Math.PI*2);ctx.fill();return c.toDataURL('image/png').split(',')[1];});
+ await page.locator('#referenceFile').setInputFiles({name:'test-height-map.png',mimeType:'image/png',buffer:Buffer.from(reference,'base64')});
+ await page.waitForFunction(()=>!document.getElementById('referencePanel').hidden);
+ await page.route('**/api/assistant',route=>route.fulfill({json:{message:'Preparé una luna en relieve.',canApply:false,generation:{mode:'relief',subject:'Luna de prueba',width:60,height:50,baseThickness:2,depth:3},params:{}}}));
+ await page.locator('#assistantPrompt').fill('Convertí la luna adjunta en relieve de 60 por 50 mm');await page.locator('#askAssistant').click();
+ await page.waitForFunction(()=>!document.getElementById('visualDesigner').hidden);
+ await page.locator('#referenceRelief').click();await page.waitForFunction(()=>document.getElementById('visualStatus').textContent.startsWith('Relieve 3D construido'));
+ assert.match(await page.locator('#proposalSummary').textContent(),/60 × 50/);
+ await page.locator('#applyProposal').click();
+ await page.locator('.fabrication-panel>summary').click();
+ const projectPromise=page.waitForEvent('download');await page.locator('#exportProject').click();const project=await projectPromise;await project.saveAs('artifacts/forge/merged-relief.json');
+ const restored=JSON.parse(await fs.readFile('artifacts/forge/merged-relief.json','utf8'));assert.equal(restored.sourceInfo.subject,'Luna de prueba');assert.equal(restored.forge,null);
+ await page.screenshot({path:'artifacts/forge/merged-relief.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});await page.locator('[data-workspace-view="chat"]').click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.locator('#forgeMode').click();await page.locator('#startBlank').click();assert.equal(await page.locator('#cadMode').getAttribute('aria-pressed'),'true');
+ assert.deepEqual(errors,[]);console.log('FORGE BROWSER OK: preview, compare, failure preserves proposal, apply, downloads, restore, discard, library, mobile, remote flow without access code, merged visual relief and export.');
 }catch(e){console.error(logs);throw e;}finally{await browser?.close();server.kill();}

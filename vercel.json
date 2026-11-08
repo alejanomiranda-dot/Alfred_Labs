@@ -5,7 +5,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/assistant.js": {
-      "maxDuration": 60
+      "maxDuration": 180
     },
     "api/forge.js": {
       "maxDuration": 300,

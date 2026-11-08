@@ -25,7 +25,7 @@ export function mountForge({host,api,getContext,offerProposal,download,toast,onV
  tabs.querySelector('#cadMode').onclick=()=>switchMode(false);tabs.querySelector('#forgeMode').onclick=()=>switchMode(true);
 
  let status=null,busy=false,controller=null,archive=null,messages=[],epoch=-1,selectedFiles=null,selectedFileId=null,serial=0;
- function message(role,content){messages.push({role,content});messages=messages.slice(-16);const row=document.createElement('div');row.className='chat-message '+role;const who=document.createElement('strong'),p=document.createElement('p');who.textContent=role==='user'?'Vos':'Forge';p.textContent=content;row.append(who,p);$('forgeConversation').append(row);while($('forgeConversation').children.length>16)$('forgeConversation').firstChild.remove();$('forgeConversation').scrollTop=$('forgeConversation').scrollHeight;}
+ function message(role,content){messages.push({role,content});messages=messages.slice(-16);const row=document.createElement('div');row.className='chat-message '+(role==='assistant'?'from-assistant':role);const who=document.createElement('strong'),p=document.createElement('p');who.textContent=role==='user'?'Vos':'Forge';p.textContent=content;row.append(who,p);$('forgeConversation').append(row);while($('forgeConversation').children.length>16)$('forgeConversation').firstChild.remove();$('forgeConversation').scrollTop=$('forgeConversation').scrollHeight;}
  function selected(){return archive?.revisions.find(r=>r.id===archive.selected);}
  function controls(){
   const usable=(status?.local||status?.remote)&&status?.compiler;
@@ -96,5 +96,5 @@ export function mountForge({host,api,getContext,offerProposal,download,toast,onV
   const files={'pieza.scad':strToU8(r.scad),'pieza.stl':base64Bytes(selectedFiles.stl),'pieza.3mf':base64Bytes(selectedFiles['3mf']),'historial-forge.json':strToU8(JSON.stringify(archive,null,2)),'LEEME.txt':strToU8('Alfred Forge — geometría sin laminar.\nRevisá tamaño, soportes y tolerancias en Bambu Studio.\nSTL/3MF originales de la fuente seleccionada; no incluyen ediciones CAD posteriores.\nAplicá la propuesta y exportá el proyecto editable desde el taller para conservar también la malla.\n')};
   download(zipSync(files),'alfred-forge-'+r.id.slice(0,8)+'.zip','application/zip');
  };
- sync();refresh();return {sync,isBusy:()=>busy,open:()=>switchMode(true)};
+ sync();refresh();return {sync,isBusy:()=>busy,open:()=>switchMode(true),openCad:()=>switchMode(false)};
 }

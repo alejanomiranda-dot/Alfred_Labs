@@ -1,5 +1,6 @@
 import './style.css';
 import {mountForge} from './forge-ui.js';
+import {createVisualDesigner} from './visual-designer.js';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {SVGLoader} from 'three/addons/loaders/SVGLoader.js';
@@ -27,7 +28,7 @@ let params={...defaults},model=null,api=null,timer,toastTimer,renderer,scene,cam
 // Colored parts of a model: templates have base + relief; free designs can have several colors.
 function partsOf(m,p){return m.parts||[{mesh:m.base,color:p.baseColor},{mesh:m.detail,color:p.detailColor}];}
 let conversation=[],referenceImage=null,projectEpoch=0;
-let proposal=null,previousDesign=null,previousAppliedSnapshot=null,proposalBase=null,assistantBusy=false,requestController=null,requestSerial=0,previewModel=null,previewParams=null;
+let proposal=null,previousDesign=null,previousAppliedSnapshot=null,proposalBase=null,assistantBusy=false,requestController=null,requestSerial=0,previewModel=null,previewParams=null,visualDesigner=null;
 let settings=loadSettings(),review=null,reviewTimer,heatOn=false,history=[],future=[];
 // Undo / redo for every change to the design (edits, proposals, orientation).
 function rememberState(){history.push(structuredClone(params));if(history.length>20)history.shift();future=[];updateHistoryButtons();}
@@ -36,7 +37,7 @@ function clearGeometry(){if(group)while(group.children.length){const m=group.chi
 function showConversation(){
  const host=$('conversation');if(!host)return;host.replaceChildren();
  const messages=conversation.length?conversation:[{role:'assistant',content:'¿Qué vamos a crear? Contame la forma y las medidas, o pedime un cambio sobre la pieza que ves.'}];
- for(const item of messages){const row=document.createElement('div');row.className='chat-message '+(item.event?'event':item.role);const who=document.createElement('strong'),text=document.createElement('p');who.textContent=item.event?'Diseño':item.role==='user'?'Vos':'Alfred';text.textContent=item.content;row.append(who,text);host.append(row);}
+ for(const item of messages){const row=document.createElement('div');row.className='chat-message '+(item.event?'event':item.role==='assistant'?'from-assistant':item.role);const who=document.createElement('strong'),text=document.createElement('p');who.textContent=item.event?'Diseño':item.role==='user'?'Vos':'Alfred';text.textContent=item.content;row.append(who,text);host.append(row);}
  host.scrollTop=host.scrollHeight;
 }
 function addMessage(role,content,event=false){conversation.push({role,content,event});showConversation();}
@@ -61,7 +62,7 @@ function initializeViewer(){
  const floor=new THREE.Mesh(new THREE.PlaneGeometry(1000,1000),new THREE.ShadowMaterial({opacity:.12}));floor.position.z=-.2;floor.receiveShadow=true;scene.add(floor);
  group=new THREE.Group();scene.add(group);
  tools=createViewerTools({host,scene,camera,renderer,group,markDirty:()=>{renderDirty=true;},meshGeometry:geometry});
- const resize=()=>{const {width,height}=host.getBoundingClientRect();if(!width||!height)return;renderer.setSize(width,height);camera.aspect=width/height;camera.updateProjectionMatrix();resetView(Boolean(previewModel)&&previewParams?.kind!=='free',false,previewModel);};new ResizeObserver(resize).observe(host);resize();
+ const resize=()=>{const {width,height}=host.getBoundingClientRect();if(!width||!height)return;renderer.setSize(width,height);renderDirty=true;camera.aspect=width/height;camera.updateProjectionMatrix();resetView(Boolean(previewModel)&&previewParams?.kind!=='free',false,previewModel);};new ResizeObserver(resize).observe(host);resize();
  renderer.setAnimationLoop(()=>{controls.update();if(renderDirty||controls.autoRotate){renderer.render(scene,camera);tools.beforeRender();renderDirty=false;}});
  const toolbar=document.createElement('div');toolbar.className='viewport-tools';toolbar.innerHTML='<button class="small" id="toggleGrid" title="Mostrar u ocultar cuadrícula" aria-label="Cuadrícula" aria-pressed="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M2 2h16v16H2ZM2 7h16M2 13h16M7 2v16M13 2v16"/></svg></button><button class="small" id="wireframe" title="Ver la malla del modelo" aria-label="Malla del modelo" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="m10 1 8 4v10l-8 4-8-4V5ZM2 5l8 5 8-5M10 10v9M2 5l8 14 8-14M2 15l8-14 8 14"/></svg></button><button class="small" id="autoRotate" title="Girar automáticamente" aria-label="Giro automático" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M16 7a7 7 0 1 0 1 6M16 2v5h-5"/></svg></button><button class="small" id="rulerTool" title="Regla: hacé clic en dos puntos de la pieza" aria-label="Regla" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="m2 14 12-12 4 4L6 18ZM5 11l2 2M8 8l2 2M11 5l2 2"/></svg></button><button class="small" id="dimsTool" title="Cotas: medidas totales" aria-label="Cotas" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M2 16h16M2 13v6M18 13v6M5 3h10v8H5Z"/></svg></button><button class="small" id="sectionTool" title="Plano de corte: ver la pieza por dentro" aria-label="Corte" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M3 6h14v11H3ZM1 11h18" stroke-dasharray="2 1.5"/></svg></button>';
  host.append(toolbar);const info=document.createElement('div');info.className='viewport-info';info.textContent='ESPACIO DE DISEÑO · mm';host.append(info);
@@ -101,7 +102,7 @@ function sync(){
  for(const key of Object.keys(defaults))if($(key)&&'value' in $(key))$(key).value=params[key];
  for(const button of document.querySelectorAll('[data-kind]'))button.classList.toggle('selected',button.dataset.kind===params.kind);
  for(const kind of ['tag','qr','logo'])$(kind+'Fields').hidden=params.kind!==kind;
- $('designForm').classList.toggle('free-mode',params.kind==='free');$('freeInfo').hidden=params.kind!=='free';if(params.kind==='free')$('freeOperations').textContent=(params.freeDesign?.nodes||[]).map((n,i)=>(i+1)+'. '+({box:'Bloque',open_box:'Caja abierta · paredes y fondo',imported:'Pieza importada del archivo',open_cylinder:'Recipiente redondo · paredes y fondo',revolve:'Pieza de revolución (perfil por tramos)',engrave_text:'Texto grabado',emboss_text:'Texto en relieve',cylinder:'Cilindro / cono',sphere:'Esfera',extrude:'Contorno extruido',text:'Texto',union:'Unión',subtract:'Sustracción / hueco',intersect:'Intersección'}[n.type]||n.type)).join('\n')||'Todavía no hay geometría. Empecemos por tu idea.';
+ $('designForm').classList.toggle('free-mode',params.kind==='free');$('freeInfo').hidden=params.kind!=='free';if(params.kind==='free')$('freeOperations').textContent=(params.freeDesign?.nodes||[]).map((n,i)=>(i+1)+'. '+({box:'Bloque',open_box:'Caja abierta · paredes y fondo',imported:'Pieza importada del archivo',open_cylinder:'Recipiente redondo · paredes y fondo',revolve:'Pieza de revolución (perfil por tramos)',engrave_text:'Texto grabado',emboss_text:'Texto en relieve',cylinder:'Cilindro / cono',sphere:'Esfera',ellipsoid:'Elipsoide',capsule:'Cápsula',torus:'Anillo',extrude:'Contorno extruido',text:'Texto',union:'Unión',subtract:'Sustracción / hueco',intersect:'Intersección'}[n.type]||n.type)).join('\n')||'Todavía no hay geometría. Empecemos por tu idea.';
  if($('opEditor')){if(params.kind==='free'&&params.freeDesign)renderOpEditor($('opEditor'),params.freeDesign,editProgram);else $('opEditor').replaceChildren();}updateHistoryButtons();
  $('logoNote').textContent=params.logoPolygons?'Logo vectorial cargado. El relieve usa un solo color.':'Usá un SVG con formas rellenas y textos convertidos a curvas. Se crea un relieve de un color.';
  render();forgeUI?.sync();
@@ -177,7 +178,7 @@ assistant.innerHTML=`<div class="chat-heading"><div><span class="eyebrow">TU COM
 <section id="proposalCard" class="proposal-card" aria-label="Propuesta pendiente" hidden><div class="proposal-heading"><strong>Propuesta lista</strong><span>Sin aplicar</span></div><p id="proposalSummary"></p><details><summary>Ver cambios</summary><ul id="proposalChanges"></ul></details><div id="ghostSwitch" class="ghost-switch" role="group" aria-label="Comparar propuesta" hidden><span>Ver:</span><button type="button" class="small" data-ghost="both" aria-pressed="true">Comparar</button><button type="button" class="small" data-ghost="proposal" aria-pressed="false">Propuesta</button><button type="button" class="small" data-ghost="current" aria-pressed="false">Actual</button></div><div class="proposal-actions"><button id="applyProposal" class="primary" type="button" hidden>Aplicar</button><button id="previewOnMobile" class="secondary mobile-only" type="button">Ver pieza</button><button id="discardProposal" class="subtle" type="button">Descartar</button></div><small>Podés seguir conversando para ajustarla antes de aplicar.</small></section>
 <p id="assistantReply" role="status"></p><button id="undoProposal" class="subtle" type="button" hidden>↶ Deshacer cambio del asistente</button>
 <div id="referencePanel" hidden><img id="referencePreview" alt="Referencia visual del proyecto"><p id="referenceName" class="hint"></p><button id="measureReference" type="button" class="secondary">Medir en la foto</button><button id="removeReference" type="button" class="subtle">Quitar referencia</button></div>
-<form id="assistantForm" class="chat-composer"><label for="assistantPrompt">Mensaje a Alfred</label><textarea id="assistantPrompt" maxlength="2000" rows="2" placeholder="Hacela redonda de 40 mm…" required></textarea><div class="composer-actions"><label class="reference-upload">＋ Foto o dibujo<input id="referenceFile" type="file" accept="image/png,image/jpeg" hidden></label><button id="stopAssistant" type="button" class="subtle" hidden>Detener</button><button id="askAssistant" class="primary" type="submit">Enviar ↑</button></div><small>Enter para enviar · Shift + Enter para una nueva línea</small></form>
+<div id="visualHost"></div><form id="assistantForm" class="chat-composer"><label class="design-mode">Qué querés crear<select id="designMode"><option value="auto">Elegir según mi pedido</option><option value="relief">Dibujo, escudo o rostro en relieve</option></select></label><label for="assistantPrompt">Mensaje a Alfred</label><textarea id="assistantPrompt" maxlength="2000" rows="2" placeholder="Un escudo en relieve, una maceta, una luna…" required></textarea><div class="composer-actions"><label class="reference-upload">＋ Foto o dibujo<input id="referenceFile" type="file" accept="image/png,image/jpeg" hidden></label><button id="stopAssistant" type="button" class="subtle" hidden>Detener</button><button id="askAssistant" class="primary" type="submit">Enviar ↑</button></div><small>Enter para enviar · Shift + Enter para una nueva línea</small></form>
 <details class="chat-privacy"><summary>Sobre esta conversación</summary><p>Al enviar, compartís el pedido, la conversación reciente, el diseño y la referencia adjunta con OpenAI. La conversación y la foto duran esta sesión. El proyecto editable conserva la geometría.</p></details>`;
 document.querySelector('.workspace').append(assistant);
 showConversation();
@@ -207,29 +208,35 @@ if(!localAssistant){$('askAssistant').disabled=true;$('assistantReply').textCont
 function sizeText(v){return v.map(x=>String(Math.round(x*10)/10).replace('.',',')).join(' × ')+' mm';}
 $('assistantPrompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(!assistantBusy&&!$('askAssistant').disabled)$('assistantForm').requestSubmit();}});
 $('stopAssistant').onclick=()=>{requestController?.abort();};
+visualDesigner=createVisualDesigner({host:$('visualHost'),getParams:()=>params,getReference:()=>referenceImage,
+ begin(){if(assistantBusy||forgeUI?.isBusy()||!localAssistant){toast('Esperá a que termine la consulta actual y comprobá que el asistente esté disponible.');return null;}const epoch=projectEpoch,serial=++requestSerial,controller=new AbortController();requestController=controller;setAssistantBusy(true);return {api,signal:controller.signal,headers:{'Content-Type':'application/json'},isCurrent:()=>epoch===projectEpoch&&serial===requestSerial,finish(){if(serial===requestSerial){requestController=null;setAssistantBusy(false);}}};},
+ onProposal({candidate,built,snapshot}){clearProposal();proposal=candidate;proposalBase=snapshot;$('proposalChanges').replaceChildren(...proposalChanges(params,candidate).map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));$('proposalSummary').textContent='Relieve visual · '+sizeText(built.dimensions);$('proposalCard').hidden=false;$('applyProposal').hidden=false;showGhost(built,candidate);$('assistantReply').textContent='Relieve listo para revisar. Aplicá cuando estés conforme.';},
+ onMessage:message=>addMessage('assistant',message),onError:message=>{$('assistantReply').textContent=message;}
+});
 $('assistantForm').onsubmit=async e=>{
  e.preventDefault();if(forgeUI?.isBusy()){toast('Esperá a que termine Forge o detené la generación.');return;}if(!localAssistant||assistantBusy)return;
  const prompt=$('assistantPrompt').value.trim();if(!prompt)return;
  invalidateProposal();
  const snapshot=JSON.stringify(params),base=JSON.parse(snapshot),epoch=projectEpoch,serial=++requestSerial,maxAttempts=3;
- const pending=pendingContext(params,proposal,proposalBase),recent=conversation.slice(-12).map(({role,content})=>({role,content:content.slice(0,1600)})),image=referenceImage;
+ const pendingDesign=proposal?structuredClone(proposal):null,pending=pendingContext(params,proposal,proposalBase),pendingGeneration=visualDesigner?.pending(),recent=conversation.slice(-12).map(({role,content})=>({role,content:content.slice(0,1600)})),image=referenceImage;
  const controller=new AbortController();requestController=controller;setAssistantBusy(true);
  addMessage('user',prompt);$('assistantPrompt').value='';$('assistantReply').textContent='Alfred está pensando…';
  try{let result,checked=null,correction,lastError='';
   for(let attempt=1;attempt<=maxAttempts;attempt++){
    if(attempt>1){$('assistantReply').textContent='Comprobando la pieza y ajustando la propuesta…';await new Promise(r=>setTimeout(r,2100));controller.signal.throwIfAborted();if(epoch!==projectEpoch)return;}
-   const response=await fetch('/api/assistant',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,style:settings,params:{...base,importedMesh:undefined,forge:undefined},history:recent,imageDataUrl:image,...(pending?{pendingProposal:pending}:{}),...(base.importedMesh?{importedSummary:{name:base.importedMesh.name,size:importedSize(base.importedMesh),...describeImport(api,base.importedMesh)}}:{}),...(correction?{correction}:{})})});
+   const response=await fetch('/api/assistant',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,designMode:$('designMode').value,...(pendingGeneration?{pendingGeneration}:{}),style:settings,params:{...base,importedMesh:undefined,forge:undefined},history:recent,imageDataUrl:image,...(pending?{pendingProposal:pending}:{}),...(base.importedMesh?{importedSummary:{name:base.importedMesh.name,size:importedSize(base.importedMesh),...describeImport(api,base.importedMesh)}}:{}),...(correction?{correction}:{})})});
    result=await response.json();if(epoch!==projectEpoch||serial!==requestSerial)return;
 
    if(!response.ok)throw Error(result.error||'No se pudo obtener una propuesta.');
    if(!result.canApply)break;
-   try{checked=verifyProposal(api,base,result);break;}catch(error){lastError=error.message;correction={error:lastError.slice(0,1500),program:result.params.freeDesign??null};}
+   try{checked=verifyProposal(api,base,result,pendingDesign);break;}catch(error){lastError=error.message;correction={error:lastError.slice(0,1500),program:result.params.freeDesign??null};}
   }
+  if(result.generation){if(JSON.stringify(params)!==snapshot)throw Error('La pieza cambió durante la consulta. Reenviá el pedido.');clearProposal();visualDesigner.offer(result.generation);}
   const failed=result.canApply&&!checked;
   addMessage('assistant',failed?'No pude construir una pieza válida con esa propuesta. Podemos ajustar las medidas o hacerla por partes.':result.message);
   if(JSON.stringify(params)!==snapshot){invalidateProposal();$('assistantReply').textContent='Cambiaste la pieza durante la consulta. Reenviá el pedido para incluir esos ajustes.';return;}
   $('assistantReply').textContent=failed?'La verificación detectó un problema. Tu diseño sigue como estaba.':checked?'Vista previa lista. Aplicá la propuesta cuando estés conforme.':proposal?'Tu propuesta sigue pendiente. Podés ajustarla o aplicarla.':'';
-  if(checked){const candidate=checked.candidate;proposal=candidate;proposalBase=snapshot;
+  if(checked){visualDesigner.reset();const candidate=checked.candidate;proposal=candidate;proposalBase=snapshot;
    const size=checked.built.dimensions||[candidate.width,candidate.height,checked.built.totalHeight];
    $('proposalSummary').textContent=(candidate.shape==='circle'&&candidate.kind!=='free'?'Círculo de '+candidate.width+' mm de diámetro · ':sizeText(size)+' · ')+'Vista previa';
    $('proposalChanges').replaceChildren(...proposalChanges(base,candidate).map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));
@@ -255,8 +262,8 @@ $('undoProposal').onclick=()=>{
  addMessage('user','Deshice el cambio del asistente. El diseño actual vuelve al estado anterior.',true);$('undoProposal').hidden=true;$('assistantReply').textContent='Cambio deshecho.';
 };
 
-function resetProjectContext(){projectEpoch++;requestSerial++;requestController?.abort();requestController=null;if($('stopAssistant'))setAssistantBusy(false);if($('proposalCard'))$('proposalCard').hidden=true;history=[];future=[];updateHistoryButtons();previousAppliedSnapshot=null;currentProjectId=null;hideGhost();conversation=[];referenceImage=null;showConversation();if($('referencePanel'))$('referencePanel').hidden=true;if($('assistantPrompt'))$('assistantPrompt').value='';if($('applyProposal'))$('applyProposal').hidden=true;if($('undoProposal'))$('undoProposal').hidden=true;if($('proposalChanges'))$('proposalChanges').replaceChildren();if($('assistantReply'))$('assistantReply').textContent='Contame qué vamos a crear y para qué lo necesitás.';proposal=null;proposalBase=null;previousDesign=null;}
-function startBlank(){resetProjectContext();showWorkspaceView('chat',false);params={...defaults,kind:'free',project:'Mi nuevo proyecto',freeDesign:null};sync();if(camera)resetView();$('assistantPrompt').placeholder='Quiero crear un soporte para… Necesito que mida…';showWorkspaceView('chat',false);$('assistantPanel').scrollIntoView({behavior:'smooth',block:'center'});$('assistantPrompt').focus();}
+function resetProjectContext(){visualDesigner?.reset();projectEpoch++;requestSerial++;requestController?.abort();requestController=null;if($('stopAssistant'))setAssistantBusy(false);if($('proposalCard'))$('proposalCard').hidden=true;history=[];future=[];updateHistoryButtons();previousAppliedSnapshot=null;currentProjectId=null;hideGhost();conversation=[];referenceImage=null;showConversation();if($('referencePanel'))$('referencePanel').hidden=true;if($('assistantPrompt'))$('assistantPrompt').value='';if($('applyProposal'))$('applyProposal').hidden=true;if($('undoProposal'))$('undoProposal').hidden=true;if($('proposalChanges'))$('proposalChanges').replaceChildren();if($('assistantReply'))$('assistantReply').textContent='Contame qué vamos a crear y para qué lo necesitás.';proposal=null;proposalBase=null;previousDesign=null;}
+function startBlank(){forgeUI?.openCad();resetProjectContext();showWorkspaceView('chat',false);params={...defaults,kind:'free',project:'Mi nuevo proyecto',freeDesign:null};sync();if(camera)resetView();$('assistantPrompt').placeholder='Un escudo en relieve, una luna, una botella, una maceta…';showWorkspaceView('chat',false);$('assistantPanel').scrollIntoView({behavior:'smooth',block:'center'});$('assistantPrompt').focus();}
 $('startBlank').onclick=startBlank;
 $('startPhoto').onclick=()=>{$('referenceFile').dataset.newProject='yes';$('referenceFile').click();};
 $('startTemplate').onclick=()=>{document.querySelector('.products').hidden=false;const products=document.querySelector('.products');products.classList.add('highlight');products.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>products.classList.remove('highlight'),2000);products.querySelector('button').focus();};
@@ -273,7 +280,7 @@ $('startModel').onclick=()=>{if(!api){toast('El motor 3D todavía se está prepa
 modelInput.onchange=async()=>{const file=modelInput.files[0];modelInput.value='';if(!file)return;
  try{if(file.size>80e6)throw Error('El archivo supera 80 MB.');toast('Leyendo '+file.name+'…');await new Promise(r=>setTimeout(r,30));
   const read=readMeshFile(file.name,new Uint8Array(await file.arrayBuffer())),prepared=prepareImport(api,read);
-  resetProjectContext();params={...defaults,kind:'free',project:read.name.slice(0,60)||'Pieza importada',importedMesh:prepared.mesh,freeDesign:{version:1,nodes:[{type:'imported',position:[0,0,0],rotation:[0,0,0]}]}};sync();if(!model)throw Error($('statusText').textContent);if(camera)resetView();
+  forgeUI?.openCad();resetProjectContext();params={...defaults,kind:'free',project:read.name.slice(0,60)||'Pieza importada',importedMesh:prepared.mesh,freeDesign:{version:1,nodes:[{type:'imported',position:[0,0,0],rotation:[0,0,0]}]}};sync();if(!model)throw Error($('statusText').textContent);if(camera)resetView();
   const size=sizeText(prepared.size),notes=[read.parts>1?'El archivo tenía '+read.parts+' partes; se unieron en una sola pieza.':'',prepared.tolerance?'La malla se simplificó de '+prepared.original.toLocaleString('es-AR')+' a '+prepared.triangles.toLocaleString('es-AR')+' triángulos (tolerancia '+String(prepared.tolerance).replace('.',',')+' mm) para que el taller funcione ágil.':''].filter(Boolean).join(' ');
   conversation.push({role:'assistant',content:'Abrí tu pieza «'+read.name+'»: mide '+size+'. '+notes+' Contame qué querés cambiarle: un grabado, un texto en relieve, un agujero, recortarla o sumarle algo.'});showConversation();
   $('assistantReply').textContent='Pieza importada. Contale a la guía qué querés cambiarle.';$('assistantPrompt').placeholder='Grabale VERO abajo, agregale un agujero de 5 mm…';showWorkspaceView('chat',false);$('assistantPanel').scrollIntoView({behavior:'smooth',block:'center'});$('assistantPrompt').focus();toast('Pieza importada: '+size+'.');
@@ -333,6 +340,7 @@ function modelSize(){if(model.dimensions)return model.dimensions;const p=model.c
 // Forge shares the proven proposal/preview/apply flow; compiler code stays server-side.
 forgeUI=mountForge({host:assistant,api,getContext:()=>({current:params,pending:proposal,epoch:projectEpoch,busy:assistantBusy}),download,toast,onBusy:busy=>{$('applyProposal').disabled=busy||assistantBusy;$('discardProposal').disabled=busy||assistantBusy;},onView:()=>showWorkspaceView('piece',false),offerProposal:(checked,base)=>{
  if(JSON.stringify(params)!==base)throw Error('La pieza cambió. Volvé a generar la propuesta.');
+ visualDesigner.reset();
  proposal=checked.candidate;proposalBase=base;
  $('proposalSummary').textContent='Alfred Forge · '+sizeText(checked.built.dimensions)+' · sin aplicar';
  $('proposalChanges').replaceChildren(...['Reemplazar la geometría por la versión de Forge seleccionada.','Conservar fuente OpenSCAD e historial en el proyecto editable.','Tu pieza actual se conserva hasta que uses Aplicar.'].map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));
