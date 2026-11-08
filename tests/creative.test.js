@@ -6,10 +6,30 @@ import {reliefMesh,generatedParams} from '../src/relief.js';
 import {validateGeneration} from '../src/generation-spec.js';
 import {generateVisual} from '../server/visual-generation.js';
 import {designService} from '../server/design-service.js';
-import {checkProposal} from '../src/proposals.js';
+import {checkProposal,pendingContext} from '../src/proposals.js';
 import {stlBytes,threeMfBytes} from '../src/export.js';
 const api=await Module();api.setup();
 const spec={mode:'relief',subject:'Luna de prueba',width:80,height:60,baseThickness:2,depth:3};
+
+test('relieve reemplaza fuente Forge anterior y la guía CAD no recibe su historial',()=>{
+ const previous={...defaults,forge:{version:1,selected:'old',revisions:[{scad:'fuente-privada'}]}};
+ const mesh=reliefMesh(new Uint8ClampedArray(16).fill(255),2,2,spec);
+ const candidate=generatedParams(previous,mesh,spec);
+ assert.equal(candidate.forge,null);
+ assert.equal(buildModel(api,candidate).params.sourceInfo.subject,spec.subject);
+ const pending=pendingContext(defaults,previous,JSON.stringify(defaults));
+ assert.equal(pending.forge,undefined);
+ assert.ok(!JSON.stringify(pending).includes('fuente-privada'));
+});
+
+test('modelo configurado en el entorno local llega a la guía además de Forge',async()=>{
+ let sent;
+ await designService({prompt:'Solo explicame qué puedo hacer',params:defaults},{OPENAI_API_KEY:'test',OPENAI_MODEL:'configured-test-model'},async(_url,options)=>{
+  sent=JSON.parse(options.body);
+  return {ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify({message:'Podés crear piezas.',canApply:false,params:defaults})}]}]})};
+ });
+ assert.equal(sent.model,'configured-test-model');
+});
 function edgesClosed(mesh){const edges=new Map();for(let i=0;i<mesh.triangles.length;i+=3)for(let j=0;j<3;j++){const a=mesh.triangles[i+j],b=mesh.triangles[i+(j+1)%3],key=[Math.min(a,b),Math.max(a,b)].join(':');const e=edges.get(key)||[0,0];e[0]++;e[1]+=a<b?1:-1;edges.set(key,e);}for(const e of edges.values())assert.deepEqual(e,[2,0]);}
 test('mapa de alturas produce relieve cerrado con base plana, medidas y volumen reales',()=>{
  const pixels=new Uint8ClampedArray(4*4*4);for(let i=0;i<16;i++)pixels.set([i%4*85,i%4*85,i%4*85,255],i*4);

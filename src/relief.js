@@ -34,5 +34,5 @@ export async function reliefFromImage(imageDataUrl,spec,{invert=false}={}){
 }
 
 export function generatedParams(base,mesh,spec){
- return {...base,kind:'free',project:spec.subject.slice(0,60),importedMesh:mesh,freeDesign:{version:1,nodes:[{type:'imported',position:[0,0,0],rotation:[0,0,0]}]},printRotation:[0,0,0],sourceInfo:{...spec}};
+ return {...base,kind:'free',project:spec.subject.slice(0,60),importedMesh:mesh,freeDesign:{version:1,nodes:[{type:'imported',position:[0,0,0],rotation:[0,0,0]}]},printRotation:[0,0,0],sourceInfo:{...spec},forge:null};
 }

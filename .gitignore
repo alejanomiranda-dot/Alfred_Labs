@@ -6,3 +6,8 @@ dist/
 .dev.vars*
 .key-setup/
 .vercel/
+
+# Generated verification/printing artifacts
+muestras/
+artifacts/
+.tools/

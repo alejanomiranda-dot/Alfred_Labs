@@ -35,6 +35,6 @@ export function proposalChanges(base,candidate){
 export function pendingContext(current,proposal,base){
  // A manual edit invalidates an outstanding proposal, including while a request runs.
  if(!proposal||JSON.stringify(current)!==base)return undefined;
- const {importedMesh,logoPolygons,...safe}=proposal;
+ const {importedMesh,logoPolygons,forge,...safe}=proposal;
  return safe;
 }

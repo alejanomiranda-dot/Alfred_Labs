@@ -27,7 +27,7 @@
 .assistant #visualHost{max-height:45%;overflow:auto;flex-shrink:0}.visual-designer{margin:6px 12px!important;border:1px solid #4c6778;border-radius:9px;background:#132433}.visual-designer>summary{font-size:12px;color:#c7e6df;padding:11px}.visual-body{padding:0 12px 12px}.visual-body fieldset{border:0;padding:0;min-width:0}.visual-body textarea{min-height:60px;font-size:12px}.visual-body .fields{gap:8px}.visual-body label{font-size:11px}.visual-body button{margin-top:7px;font-size:11px}.visual-body input{font-size:12px!important;padding:8px!important}.visual-body img{max-width:100%;max-height:160px;object-fit:contain;background:#000;display:block;margin:10px auto}.visual-invert{display:flex;align-items:center;gap:8px}.visual-invert input{width:auto!important}.visual-body #visualStatus{font-size:12px;line-height:1.5;color:#bcebd3}.assistant .chat-composer .design-mode{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:10px}.design-mode select{width:auto;max-width:65%;margin:0;font-size:10px;padding:6px}
 /* The active task is the piece and the conversation; tools open when needed. */
 .intro{margin-bottom:18px}.intro h1{font-size:clamp(26px,3vw,40px)}
-.project-start{padding:15px 18px}.project-start>div:first-child{display:none}.start-options{margin-top:0;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}.start-card{padding:11px;grid-template-columns:22px 1fr;gap:3px 7px}.start-card b{font-size:12px}.start-card small{font-size:10px;line-height:1.5}.start-card>span{font-size:20px}
+.project-start{padding:15px 18px}.project-start>div:first-child{display:none}.start-options{margin-top:0;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}.start-card{padding:11px;grid-template-columns:22px 1fr;gap:3px 7px}.start-card b{font-size:12px}.start-card small{font-size:10px;line-height:1.5}.start-card>span{font-size:20px}
 .workspace-actions{display:flex;gap:10px;align-items:center;margin:18px 0 12px}.workspace-actions>span{font-size:10px;letter-spacing:1.4px;color:var(--accent);margin-right:auto}.workspace-actions button[aria-expanded=true]{border-color:var(--accent);color:var(--accent)}
 .workspace{grid-template-columns:minmax(280px,1fr) minmax(320px,410px);gap:16px;align-items:start}
 .editor{display:none}.editor.is-open{display:block;grid-column:1/-1;max-height:60vh;overflow:auto}.editor.is-open form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 22px}.editor form>.divider{display:none}.editor #freeInfo{grid-column:1/-1}
@@ -45,4 +45,24 @@ button:focus-visible,summary:focus-visible{outline:2px solid #93f5ce;outline-off
 @media(max-width:560px){.intro h1{font-size:27px}.intro p:not(.eyebrow){display:none}.project-start{padding:10px;margin-bottom:12px}.start-options{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.start-card{display:flex;flex-direction:column;gap:6px;padding:10px 7px;min-height:66px}.start-card small{display:none}.start-card b{font-size:11px}.start-card>span{font-size:18px}.products button{padding:10px 8px}.workspace-actions button{font-size:11px;padding:10px}.workspace-actions{gap:6px}.assistant{height:650px}.chat-heading{padding:13px}.chat-status{font-size:9px}.chat-message p{font-size:14px}.viewer-panel #viewer{height:260px}.editor.is-open form{display:block}.fabrication-panel>summary{font-size:14px}.fabrication-panel>summary span{display:none}.proposal-card{max-height:290px}.assistant #askAssistant{min-height:42px}.chat-composer>small{font-size:9px}}
 #libraryList{display:grid;gap:10px}.library-card{display:grid;grid-template-columns:96px 1fr;gap:6px 12px;align-items:center;padding:10px;border:1px solid #2a3d50;border-radius:12px;background:#0f1a26}.library-card img{width:96px;height:72px;object-fit:cover;border-radius:8px;grid-row:span 2;background:#16222f}.library-card small{display:block;color:#7f93a8}.library-actions{display:flex;gap:6px;flex-wrap:wrap}.version-list{grid-column:1/-1;margin:4px 0 0;padding-left:20px;font-size:12px}.version-list button{padding:2px 4px}.studio-output{margin:12px 0}
 
+/* Experimental local generator, using the existing studio layout. */
+.forge-mode-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.forge-mode-tabs button[aria-pressed="true"]{border-color:#93f5ce;color:#93f5ce;background:#17362e}
+#forgePanel{min-width:0}#forgePanel[hidden],#cadAssistant[hidden]{display:none}
+#forgePanel .conversation{min-height:120px;max-height:270px}
+#forgePanel .forge-checkbox{display:flex;align-items:flex-start;gap:8px;font-size:13px}
+#forgePanel .forge-checkbox input{width:auto;flex:0 0 auto;margin-top:3px}
+.forge-code{max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#080c12;padding:12px;font-size:11px}
+#forgeVersions{border-top:1px solid #29403b;padding-top:16px;margin-top:16px}
+#forgeVersions .review-actions{margin:12px 0;flex-wrap:wrap}
+#forgeProgress{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+#forgePanel textarea{width:100%;box-sizing:border-box;resize:vertical}
+.assistant>.forge-mode-tabs{flex-shrink:0;margin:0;padding:10px;border-bottom:1px solid var(--line)}
+#cadAssistant{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto}
+#forgePanel{flex:1;min-height:0;overflow:auto;padding:0 14px 14px;scrollbar-width:thin}
+#forgePanel .chat-heading{padding-left:0;padding-right:0}
+#forgePanel>p:not(.hint){font-size:13px;line-height:1.5}
+#forgePanel .conversation{min-height:0;max-height:135px;margin-top:12px}
+#forgePanel .conversation:empty{display:none}
+#forgePanel .chat-composer{padding:12px 0 8px}
 .assistant:has(.visual-designer[open]){height:auto;min-height:660px;position:relative}.assistant:has(.visual-designer[open]) .conversation{max-height:220px}.assistant:has(.visual-designer[open]) #visualHost{max-height:none}

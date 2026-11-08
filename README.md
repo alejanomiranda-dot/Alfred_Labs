@@ -2,6 +2,14 @@
 
 Estudio de diseño 3D asistido para la Bambu Lab A2L. Unidades: milímetros. Web: https://alfredlabs.vercel.app
 
+## Alfred Forge · experimental
+
+Esta versión reúne Alfred Forge y el motor creativo de relieves y geometría nativa. Forge incluye generación OpenSCAD, vista previa sin aplicar, correcciones, historial de fuentes y exportación. Para probar: `npm ci`, `npm run forge:check`, `npm run dev`; abrí `http://127.0.0.1:5173` y elegí **Alfred Forge**. La muestra incluida funciona sin IA y sin OpenSCAD instalado. En Windows: **Preparar taller.cmd**, luego **Iniciar taller.cmd**.
+
+[Pruebas reales en Windows, resultados y archivos generados](PRUEBAS-LOCALES.md). OpenSCAD portable se detecta automáticamente en `.tools/openscad/openscad.com`; esa carpeta y `.env.local` están excluidas de Git.
+
+Leé la [guía de prueba local y límites](experiments/alfred-forge/README.md). La Preview en Vercel usa un compilador aislado en Vercel Sandbox sin pedir código de acceso. El modo local sigue disponible; OpenSCAD nunca se ejecuta dentro de Vercel Functions.
+
 ## Uso local
 
 Requiere Node.js 22.12 o posterior. Desde esta carpeta:
@@ -52,7 +60,7 @@ La generación visual usa Images API (`gpt-image-1.5`, configurable con `OPENAI_
 
 `node scripts/evaluate-creative.mjs` prueba seis pedidos creativos reales. `--image` agrega una generación real de una galaxia y guarda su mapa en `muestras/`. Estas pruebas consumen API; las pruebas geométricas de `npm test` usan datos sintéticos sin red. [Alcance y validación del motor creativo](CREATIVE-ENGINE.md).
 
-Vercel: proyecto `alejano910/taller-3d`, conectado a `alejanomiranda-dot/taller-3D` (rama `main`; cada push publica). El sitio es público; el asistente exige `ASSISTANT_ACCESS_CODE` (variable secreta del servidor, mínimo 8 caracteres). Sin ella, el asistente queda cerrado. Limita intentos fallidos y pedidos por hora por instancia; el tope de gasto mensual en OpenAI es el límite definitivo. `OPENAI_API_KEY` y `ASSISTANT_ACCESS_CODE` nunca con prefijo `VITE_`. La copia local lee ambas de `.env.local` (no se sube).
+Vercel: proyecto `alejano910/taller-3d`, conectado a `alejanomiranda-dot/taller-3D` (rama `main`; cada push publica). La aplicación no solicita código de acceso. Conserva validación de origen y límites de pedidos por instancia. `OPENAI_API_KEY` permanece solo en el servidor, nunca con prefijo `VITE_`. La configuración local se lee de `.env.local` (no se sube).
 
 ## Privacidad
 

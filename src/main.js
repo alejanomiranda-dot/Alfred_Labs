@@ -1,4 +1,5 @@
 import './style.css';
+import {mountForge} from './forge-ui.js';
 import {createVisualDesigner} from './visual-designer.js';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
@@ -22,6 +23,7 @@ import {reviewPrint,costOf,durationText,composeRotation} from './printability.js
 import {loadSettings,saveSettings,money,settingDefaults} from './settings.js';
 import {prepareImport,describeImport} from './solid-program.js';
 const $=id=>document.getElementById(id),storageKey='taller-vero-projects-v1';
+let forgeUI=null;
 let params={...defaults},model=null,api=null,timer,toastTimer,renderer,scene,camera,controls,group,stageGrid,wireframe=false,renderDirty=true,tools=null;
 // Colored parts of a model: templates have base + relief; free designs can have several colors.
 function partsOf(m,p){return m.parts||[{mesh:m.base,color:p.baseColor},{mesh:m.detail,color:p.detailColor}];}
@@ -35,7 +37,7 @@ function clearGeometry(){if(group)while(group.children.length){const m=group.chi
 function showConversation(){
  const host=$('conversation');if(!host)return;host.replaceChildren();
  const messages=conversation.length?conversation:[{role:'assistant',content:'¿Qué vamos a crear? Contame la forma y las medidas, o pedime un cambio sobre la pieza que ves.'}];
- for(const item of messages){const row=document.createElement('div');row.className='chat-message '+(item.event?'event':item.role);const who=document.createElement('strong'),text=document.createElement('p');who.textContent=item.event?'Diseño':item.role==='user'?'Vos':'Alfred';text.textContent=item.content;row.append(who,text);host.append(row);}
+ for(const item of messages){const row=document.createElement('div');row.className='chat-message '+(item.event?'event':item.role==='assistant'?'from-assistant':item.role);const who=document.createElement('strong'),text=document.createElement('p');who.textContent=item.event?'Diseño':item.role==='user'?'Vos':'Alfred';text.textContent=item.content;row.append(who,text);host.append(row);}
  host.scrollTop=host.scrollHeight;
 }
 function addMessage(role,content,event=false){conversation.push({role,content,event});showConversation();}
@@ -60,7 +62,7 @@ function initializeViewer(){
  const floor=new THREE.Mesh(new THREE.PlaneGeometry(1000,1000),new THREE.ShadowMaterial({opacity:.12}));floor.position.z=-.2;floor.receiveShadow=true;scene.add(floor);
  group=new THREE.Group();scene.add(group);
  tools=createViewerTools({host,scene,camera,renderer,group,markDirty:()=>{renderDirty=true;},meshGeometry:geometry});
- const resize=()=>{const {width,height}=host.getBoundingClientRect();if(!width||!height)return;renderer.setSize(width,height);renderDirty=true;camera.aspect=width/height;camera.updateProjectionMatrix();resetView(Boolean(previewModel),false,previewModel);};new ResizeObserver(resize).observe(host);resize();
+ const resize=()=>{const {width,height}=host.getBoundingClientRect();if(!width||!height)return;renderer.setSize(width,height);renderDirty=true;camera.aspect=width/height;camera.updateProjectionMatrix();resetView(Boolean(previewModel)&&previewParams?.kind!=='free',false,previewModel);};new ResizeObserver(resize).observe(host);resize();
  renderer.setAnimationLoop(()=>{controls.update();if(renderDirty||controls.autoRotate){renderer.render(scene,camera);tools.beforeRender();renderDirty=false;}});
  const toolbar=document.createElement('div');toolbar.className='viewport-tools';toolbar.innerHTML='<button class="small" id="toggleGrid" title="Mostrar u ocultar cuadrícula" aria-label="Cuadrícula" aria-pressed="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M2 2h16v16H2ZM2 7h16M2 13h16M7 2v16M13 2v16"/></svg></button><button class="small" id="wireframe" title="Ver la malla del modelo" aria-label="Malla del modelo" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="m10 1 8 4v10l-8 4-8-4V5ZM2 5l8 5 8-5M10 10v9M2 5l8 14 8-14M2 15l8-14 8 14"/></svg></button><button class="small" id="autoRotate" title="Girar automáticamente" aria-label="Giro automático" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M16 7a7 7 0 1 0 1 6M16 2v5h-5"/></svg></button><button class="small" id="rulerTool" title="Regla: hacé clic en dos puntos de la pieza" aria-label="Regla" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="m2 14 12-12 4 4L6 18ZM5 11l2 2M8 8l2 2M11 5l2 2"/></svg></button><button class="small" id="dimsTool" title="Cotas: medidas totales" aria-label="Cotas" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M2 16h16M2 13v6M18 13v6M5 3h10v8H5Z"/></svg></button><button class="small" id="sectionTool" title="Plano de corte: ver la pieza por dentro" aria-label="Corte" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M3 6h14v11H3ZM1 11h18" stroke-dasharray="2 1.5"/></svg></button>';
  host.append(toolbar);const info=document.createElement('div');info.className='viewport-info';info.textContent='ESPACIO DE DISEÑO · mm';host.append(info);
@@ -103,7 +105,7 @@ function sync(){
  $('designForm').classList.toggle('free-mode',params.kind==='free');$('freeInfo').hidden=params.kind!=='free';if(params.kind==='free')$('freeOperations').textContent=(params.freeDesign?.nodes||[]).map((n,i)=>(i+1)+'. '+({box:'Bloque',open_box:'Caja abierta · paredes y fondo',imported:'Pieza importada del archivo',open_cylinder:'Recipiente redondo · paredes y fondo',revolve:'Pieza de revolución (perfil por tramos)',engrave_text:'Texto grabado',emboss_text:'Texto en relieve',cylinder:'Cilindro / cono',sphere:'Esfera',ellipsoid:'Elipsoide',capsule:'Cápsula',torus:'Anillo',extrude:'Contorno extruido',text:'Texto',union:'Unión',subtract:'Sustracción / hueco',intersect:'Intersección'}[n.type]||n.type)).join('\n')||'Todavía no hay geometría. Empecemos por tu idea.';
  if($('opEditor')){if(params.kind==='free'&&params.freeDesign)renderOpEditor($('opEditor'),params.freeDesign,editProgram);else $('opEditor').replaceChildren();}updateHistoryButtons();
  $('logoNote').textContent=params.logoPolygons?'Logo vectorial cargado. El relieve usa un solo color.':'Usá un SVG con formas rellenas y textos convertidos a curvas. Se crea un relieve de un color.';
- render();
+ render();forgeUI?.sync();
 }
 $('designForm').addEventListener('submit',e=>e.preventDefault());
 $('designForm').addEventListener('input',e=>{if(!(e.target.id in defaults))return;rememberState();params[e.target.id]=e.target.type==='number'?Number(e.target.value):e.target.value;if(params.shape==='circle'&&params.kind!=='free')params.height=params.width;invalidateProposal();invalidateAssistantUndo();model=null;setExportEnabled(false);clearTimeout(timer);timer=setTimeout(render,180);});
@@ -199,25 +201,20 @@ $('previewOnMobile').onclick=()=>showWorkspaceView('piece');
 function clearProposal(){proposal=null;proposalBase=null;hideGhost();$('proposalCard').hidden=true;$('applyProposal').hidden=true;}
 function invalidateProposal(){if(proposal&&JSON.stringify(params)!==proposalBase){clearProposal();$('assistantReply').textContent='La pieza cambió. Pedí una propuesta nueva para incluir tus ajustes.';}}
 function invalidateAssistantUndo(){if(previousDesign&&JSON.stringify(params)!==previousAppliedSnapshot){previousDesign=null;previousAppliedSnapshot=null;if($('undoProposal'))$('undoProposal').hidden=true;}}
-function setAssistantBusy(busy){assistantBusy=busy;$('askAssistant').disabled=busy||!localAssistant||!$('accessPanel').hidden;$('stopAssistant').hidden=!busy;$('applyProposal').disabled=busy;$('discardProposal').disabled=busy;$('conversation').setAttribute('aria-busy',String(busy));}
+function setAssistantBusy(busy){assistantBusy=busy;$('askAssistant').disabled=busy||!localAssistant;$('stopAssistant').hidden=!busy;$('applyProposal').disabled=busy;$('discardProposal').disabled=busy;$('conversation').setAttribute('aria-busy',String(busy));}
 let localAssistant=location.hostname==='127.0.0.1';
 document.querySelector('.output details p').textContent='Cinco formas de empezar: desde cero, desde una foto, desde tu archivo 3D (STL o 3MF), un repuesto a medida o una plantilla. Guía con inteligencia artificial que verifica cada propuesta antes de mostrarla. Volúmenes, recipientes, piezas por perfil, textos e íconos grabados, en relieve, incrustados o alrededor de superficies curvas, hasta 4 colores. Regla, cotas, corte, revisión de impresión con material, tiempo y costo, prueba de encaje, versiones, foto de producto y presupuesto.';
-const codeKey='alfred-acceso-guia';function storedCode(){try{return localStorage.getItem(codeKey)||'';}catch{return '';}}
-function askForCode(message){$('accessPanel').hidden=false;$('accessMessage').textContent=message;$('askAssistant').disabled=true;}
-{const panel=document.createElement('form');panel.id='accessPanel';panel.className='access-panel';panel.hidden=true;panel.innerHTML='<label>Código de acceso a la guía<input id="accessCode" type="password" autocomplete="current-password" maxlength="200" required></label><button class="primary" type="submit">Entrar</button><p id="accessMessage" class="hint"></p>';$('assistantForm').before(panel);
- panel.onsubmit=e=>{e.preventDefault();try{localStorage.setItem(codeKey,$('accessCode').value.trim());}catch{}sessionCode=$('accessCode').value.trim();$('accessCode').value='';panel.hidden=true;$('askAssistant').disabled=false;$('assistantReply').textContent='Listo. Contale a la guía qué querés crear.';$('assistantPrompt').focus();};}
-let sessionCode=storedCode();
-if(!localAssistant){$('askAssistant').disabled=true;$('assistantReply').textContent='Comprobando disponibilidad del asistente…';fetch('/api/assistant').then(async response=>{if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error();const status=await response.json();localAssistant=status.enabled===true;if(!localAssistant){$('assistantReply').textContent='El asistente todavía no está configurado en el servidor.';return;}if(status.needsCode&&!sessionCode){$('assistantReply').textContent='';askForCode('La guía usa inteligencia artificial y es privada. Ingresá el código una sola vez: este navegador lo va a recordar.');return;}$('askAssistant').disabled=false;$('assistantReply').textContent='El asistente está listo. Contale qué querés crear.';}).catch(()=>$('assistantReply').textContent='Este alojamiento no tiene servidor de IA. Podés usar las herramientas de diseño y exportación o abrir la versión local.');}
+if(!localAssistant){$('askAssistant').disabled=true;$('assistantReply').textContent='Comprobando disponibilidad del asistente…';fetch('/api/assistant').then(async response=>{if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error();const status=await response.json();localAssistant=status.enabled===true;if(!localAssistant){$('assistantReply').textContent='El asistente todavía no está configurado en el servidor.';return;}$('askAssistant').disabled=false;$('assistantReply').textContent='El asistente está listo. Contale qué querés crear.';}).catch(()=>$('assistantReply').textContent='Este alojamiento no tiene servidor de IA. Podés usar las herramientas de diseño y exportación o abrir la versión local.');}
 function sizeText(v){return v.map(x=>String(Math.round(x*10)/10).replace('.',',')).join(' × ')+' mm';}
 $('assistantPrompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(!assistantBusy&&!$('askAssistant').disabled)$('assistantForm').requestSubmit();}});
 $('stopAssistant').onclick=()=>{requestController?.abort();};
 visualDesigner=createVisualDesigner({host:$('visualHost'),getParams:()=>params,getReference:()=>referenceImage,
- begin(){if(assistantBusy||!localAssistant||!$('accessPanel').hidden){toast('Habilitá el asistente y esperá a que termine la consulta actual.');return null;}const epoch=projectEpoch,serial=++requestSerial,controller=new AbortController();requestController=controller;setAssistantBusy(true);return {api,signal:controller.signal,headers:{'Content-Type':'application/json',...(sessionCode?{'X-Access-Code':sessionCode}:{})},isCurrent:()=>epoch===projectEpoch&&serial===requestSerial,finish(){if(serial===requestSerial){requestController=null;setAssistantBusy(false);}}};},
+ begin(){if(assistantBusy||forgeUI?.isBusy()||!localAssistant){toast('Esperá a que termine la consulta actual y comprobá que el asistente esté disponible.');return null;}const epoch=projectEpoch,serial=++requestSerial,controller=new AbortController();requestController=controller;setAssistantBusy(true);return {api,signal:controller.signal,headers:{'Content-Type':'application/json'},isCurrent:()=>epoch===projectEpoch&&serial===requestSerial,finish(){if(serial===requestSerial){requestController=null;setAssistantBusy(false);}}};},
  onProposal({candidate,built,snapshot}){clearProposal();proposal=candidate;proposalBase=snapshot;$('proposalChanges').replaceChildren(...proposalChanges(params,candidate).map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));$('proposalSummary').textContent='Relieve visual · '+sizeText(built.dimensions);$('proposalCard').hidden=false;$('applyProposal').hidden=false;showGhost(built,candidate);$('assistantReply').textContent='Relieve listo para revisar. Aplicá cuando estés conforme.';},
- onUnauthorized:()=>{sessionCode='';askForCode('Volvé a ingresar tu código de acceso para generar.');},onMessage:message=>addMessage('assistant',message),onError:message=>{$('assistantReply').textContent=message;}
+ onMessage:message=>addMessage('assistant',message),onError:message=>{$('assistantReply').textContent=message;}
 });
 $('assistantForm').onsubmit=async e=>{
- e.preventDefault();if(!localAssistant||assistantBusy)return;
+ e.preventDefault();if(forgeUI?.isBusy()){toast('Esperá a que termine Forge o detené la generación.');return;}if(!localAssistant||assistantBusy)return;
  const prompt=$('assistantPrompt').value.trim();if(!prompt)return;
  invalidateProposal();
  const snapshot=JSON.stringify(params),base=JSON.parse(snapshot),epoch=projectEpoch,serial=++requestSerial,maxAttempts=3;
@@ -227,9 +224,9 @@ $('assistantForm').onsubmit=async e=>{
  try{let result,checked=null,correction,lastError='';
   for(let attempt=1;attempt<=maxAttempts;attempt++){
    if(attempt>1){$('assistantReply').textContent='Comprobando la pieza y ajustando la propuesta…';await new Promise(r=>setTimeout(r,2100));controller.signal.throwIfAborted();if(epoch!==projectEpoch)return;}
-   const response=await fetch('/api/assistant',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json',...(sessionCode?{'X-Access-Code':sessionCode}:{})},body:JSON.stringify({prompt,designMode:$('designMode').value,...(pendingGeneration?{pendingGeneration}:{}),style:settings,params:{...base,importedMesh:undefined},history:recent,imageDataUrl:image,...(pending?{pendingProposal:pending}:{}),...(base.importedMesh?{importedSummary:{name:base.importedMesh.name,size:importedSize(base.importedMesh),...describeImport(api,base.importedMesh)}}:{}),...(correction?{correction}:{})})});
+   const response=await fetch('/api/assistant',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,designMode:$('designMode').value,...(pendingGeneration?{pendingGeneration}:{}),style:settings,params:{...base,importedMesh:undefined,forge:undefined},history:recent,imageDataUrl:image,...(pending?{pendingProposal:pending}:{}),...(base.importedMesh?{importedSummary:{name:base.importedMesh.name,size:importedSize(base.importedMesh),...describeImport(api,base.importedMesh)}}:{}),...(correction?{correction}:{})})});
    result=await response.json();if(epoch!==projectEpoch||serial!==requestSerial)return;
-   if(response.status===401){sessionCode='';try{localStorage.removeItem(codeKey);}catch{}askForCode(result.error+' Volvé a ingresarlo.');throw Error('Hace falta el código de acceso.');}
+
    if(!response.ok)throw Error(result.error||'No se pudo obtener una propuesta.');
    if(!result.canApply)break;
    try{checked=verifyProposal(api,base,result,pendingDesign);break;}catch(error){lastError=error.message;correction={error:lastError.slice(0,1500),program:result.params.freeDesign??null};}
@@ -253,7 +250,7 @@ $('assistantForm').onsubmit=async e=>{
  }finally{if(serial===requestSerial){requestController=null;setAssistantBusy(false);}}
 };
 $('applyProposal').onclick=()=>{
- if(!proposal||assistantBusy)return;
+ if(!proposal||assistantBusy||forgeUI?.isBusy())return;
  if(JSON.stringify(params)!==proposalBase){invalidateProposal();toast('La pieza cambió. Pedí una propuesta nueva.');return;}
  const next=proposal;previousDesign=structuredClone(params);clearProposal();rememberState();params=next;previousAppliedSnapshot=JSON.stringify(params);sync();
  if(camera)resetView(false,params.kind!=='free'&&params.backDecoration==='bone');
@@ -266,7 +263,7 @@ $('undoProposal').onclick=()=>{
 };
 
 function resetProjectContext(){visualDesigner?.reset();projectEpoch++;requestSerial++;requestController?.abort();requestController=null;if($('stopAssistant'))setAssistantBusy(false);if($('proposalCard'))$('proposalCard').hidden=true;history=[];future=[];updateHistoryButtons();previousAppliedSnapshot=null;currentProjectId=null;hideGhost();conversation=[];referenceImage=null;showConversation();if($('referencePanel'))$('referencePanel').hidden=true;if($('assistantPrompt'))$('assistantPrompt').value='';if($('applyProposal'))$('applyProposal').hidden=true;if($('undoProposal'))$('undoProposal').hidden=true;if($('proposalChanges'))$('proposalChanges').replaceChildren();if($('assistantReply'))$('assistantReply').textContent='Contame qué vamos a crear y para qué lo necesitás.';proposal=null;proposalBase=null;previousDesign=null;}
-function startBlank(){resetProjectContext();showWorkspaceView('chat',false);params={...defaults,kind:'free',project:'Mi nuevo proyecto',freeDesign:null};sync();if(camera)resetView();$('assistantPrompt').placeholder='Un escudo en relieve, una luna, una botella, una maceta…';showWorkspaceView('chat',false);$('assistantPanel').scrollIntoView({behavior:'smooth',block:'center'});$('assistantPrompt').focus();}
+function startBlank(){forgeUI?.openCad();resetProjectContext();showWorkspaceView('chat',false);params={...defaults,kind:'free',project:'Mi nuevo proyecto',freeDesign:null};sync();if(camera)resetView();$('assistantPrompt').placeholder='Un escudo en relieve, una luna, una botella, una maceta…';showWorkspaceView('chat',false);$('assistantPanel').scrollIntoView({behavior:'smooth',block:'center'});$('assistantPrompt').focus();}
 $('startBlank').onclick=startBlank;
 $('startPhoto').onclick=()=>{$('referenceFile').dataset.newProject='yes';$('referenceFile').click();};
 $('startTemplate').onclick=()=>{document.querySelector('.products').hidden=false;const products=document.querySelector('.products');products.classList.add('highlight');products.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>products.classList.remove('highlight'),2000);products.querySelector('button').focus();};
@@ -283,16 +280,16 @@ $('startModel').onclick=()=>{if(!api){toast('El motor 3D todavía se está prepa
 modelInput.onchange=async()=>{const file=modelInput.files[0];modelInput.value='';if(!file)return;
  try{if(file.size>80e6)throw Error('El archivo supera 80 MB.');toast('Leyendo '+file.name+'…');await new Promise(r=>setTimeout(r,30));
   const read=readMeshFile(file.name,new Uint8Array(await file.arrayBuffer())),prepared=prepareImport(api,read);
-  resetProjectContext();params={...defaults,kind:'free',project:read.name.slice(0,60)||'Pieza importada',importedMesh:prepared.mesh,freeDesign:{version:1,nodes:[{type:'imported',position:[0,0,0],rotation:[0,0,0]}]}};sync();if(!model)throw Error($('statusText').textContent);if(camera)resetView();
+  forgeUI?.openCad();resetProjectContext();params={...defaults,kind:'free',project:read.name.slice(0,60)||'Pieza importada',importedMesh:prepared.mesh,freeDesign:{version:1,nodes:[{type:'imported',position:[0,0,0],rotation:[0,0,0]}]}};sync();if(!model)throw Error($('statusText').textContent);if(camera)resetView();
   const size=sizeText(prepared.size),notes=[read.parts>1?'El archivo tenía '+read.parts+' partes; se unieron en una sola pieza.':'',prepared.tolerance?'La malla se simplificó de '+prepared.original.toLocaleString('es-AR')+' a '+prepared.triangles.toLocaleString('es-AR')+' triángulos (tolerancia '+String(prepared.tolerance).replace('.',',')+' mm) para que el taller funcione ágil.':''].filter(Boolean).join(' ');
   conversation.push({role:'assistant',content:'Abrí tu pieza «'+read.name+'»: mide '+size+'. '+notes+' Contame qué querés cambiarle: un grabado, un texto en relieve, un agujero, recortarla o sumarle algo.'});showConversation();
   $('assistantReply').textContent='Pieza importada. Contale a la guía qué querés cambiarle.';$('assistantPrompt').placeholder='Grabale VERO abajo, agregale un agujero de 5 mm…';showWorkspaceView('chat',false);$('assistantPanel').scrollIntoView({behavior:'smooth',block:'center'});$('assistantPrompt').focus();toast('Pieza importada: '+size+'.');
  }catch(error){toast('No se pudo importar: '+error.message);}};
 
 // Proposal preview: the guide's piece is drawn translucent over the current one before applying it.
-function showGhost(built,candidate){previewModel=built;previewParams=candidate;if(!tools)return;tools.setGhost(built,partsOf(built,candidate));setGhostMode('proposal');$('loading').style.display='none';ghostFit=!model||Math.max(...(built.dimensions||[0]))>Math.max(...(model.dimensions||[1]))*1.3?built:null;if(camera)resetView(true,false,built);$('ghostSwitch').hidden=false;}
+function showGhost(built,candidate){previewModel=built;previewParams=candidate;if(!tools)return;tools.setGhost(built,partsOf(built,candidate));setGhostMode('proposal');$('loading').style.display='none';ghostFit=!model||Math.max(...(built.dimensions||[0]))>Math.max(...(model.dimensions||[1]))*1.3?built:null;if(camera)resetView(candidate.kind!=='free',false,built);$('ghostSwitch').hidden=false;}
 function hideGhost(){tools?.setGhost(null);ghostFit=null;previewModel=null;previewParams=null;if($('dimensions'))updatePreviewStats(false);if(params.kind==='free'&&!params.freeDesign&&$('loading'))$('loading').style.display='block';if($('ghostSwitch'))$('ghostSwitch').hidden=true;}
-function updatePreviewStats(showPreview){const ref=showPreview?previewModel:model,p=showPreview?previewParams:params;if(!p)return;document.querySelector('.live').innerHTML='<i></i>'+(showPreview?'PROPUESTA · SIN APLICAR':'PIEZA ACTUAL');$('dimensions').textContent=ref?sizeText(ref.dimensions||[p.width,p.height]):'Por definir';$('totalHeight').textContent=ref?ref.totalHeight.toFixed(1).replace('.',',')+' mm':'—';}
+function updatePreviewStats(showPreview){const ref=showPreview?previewModel:model,p=showPreview?previewParams:params;if(!p)return;document.querySelector('.live').innerHTML='<i></i>'+(showPreview?'PROPUESTA · SIN APLICAR':'PIEZA ACTUAL');$('dimensions').textContent=ref?sizeText(ref.dimensions||[p.width,p.height]):'Por definir';$('totalHeight').textContent=ref?ref.totalHeight.toFixed(1).replace('.',',')+' mm':'—';$('partLabel').textContent=p.kind==='free'?(p.forge?'Forge · sólido importado':'Diseño libre'):'Base + relieve';}
 function setGhostMode(mode){tools?.setGhostMode(mode);updatePreviewStats(mode!=='current'&&Boolean(previewModel));for(const b of document.querySelectorAll('[data-ghost]'))b.setAttribute('aria-pressed',String(b.dataset.ghost===mode));}
 for(const b of document.querySelectorAll('[data-ghost]'))b.onclick=()=>setGhostMode(b.dataset.ghost);
 
@@ -338,3 +335,18 @@ $('quotePdf').onclick=()=>{render();if(!model||!camera)return;if(!review)runRevi
  toast('Se abrió el diálogo de impresión: elegí «Guardar como PDF».');};
 
 function modelSize(){if(model.dimensions)return model.dimensions;const p=model.combined.positions,k=model.combined.numProp,min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];for(let i=0;i<p.length;i+=k)for(let j=0;j<3;j++){min[j]=Math.min(min[j],p[i+j]);max[j]=Math.max(max[j],p[i+j]);}return max.map((v,j)=>v-min[j]);}
+
+
+// Forge shares the proven proposal/preview/apply flow; compiler code stays server-side.
+forgeUI=mountForge({host:assistant,api,getContext:()=>({current:params,pending:proposal,epoch:projectEpoch,busy:assistantBusy}),download,toast,onBusy:busy=>{$('applyProposal').disabled=busy||assistantBusy;$('discardProposal').disabled=busy||assistantBusy;},onView:()=>showWorkspaceView('piece',false),offerProposal:(checked,base)=>{
+ if(JSON.stringify(params)!==base)throw Error('La pieza cambió. Volvé a generar la propuesta.');
+ visualDesigner.reset();
+ proposal=checked.candidate;proposalBase=base;
+ $('proposalSummary').textContent='Alfred Forge · '+sizeText(checked.built.dimensions)+' · sin aplicar';
+ $('proposalChanges').replaceChildren(...['Reemplazar la geometría por la versión de Forge seleccionada.','Conservar fuente OpenSCAD e historial en el proyecto editable.','Tu pieza actual se conserva hasta que uses Aplicar.'].map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));
+ $('proposalCard').hidden=false;$('applyProposal').hidden=false;showGhost(checked.built,checked.candidate);if(camera)resetView(false,false,checked.built);
+}});
+// Keep the shared proposal reachable in either design mode.
+assistant.append($('proposalCard'));
+const forgeStart=document.createElement('button');forgeStart.id='startForge';forgeStart.className='start-card';forgeStart.innerHTML='<span>✦</span><b>Alfred Forge</b><small>Generá y corregí piezas · experimental.</small>';document.querySelector('.start-options').append(forgeStart);
+forgeStart.onclick=()=>{forgeUI.open();showWorkspaceView('chat',false);assistant.scrollIntoView({behavior:'smooth',block:'start'});};
