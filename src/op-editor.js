@@ -1,11 +1,11 @@
 // Direct editing of a free design: every operation shows its own measures, so small adjustments
 // (a wall, a height, a text, a color) do not need the guide. Each change is built and checked before it is applied.
-const labels={imported:'Pieza importada',box:'Bloque',open_box:'Caja abierta',cylinder:'Cilindro / cono',open_cylinder:'Recipiente redondo',revolve:'Pieza por perfil',sphere:'Esfera',extrude:'Contorno extruido',text:'Texto o ícono en volumen',engrave_text:'Grabado',emboss_text:'Relieve',union:'Unión',subtract:'Sustracción / hueco',intersect:'Intersección'};
+const labels={imported:'Pieza importada',box:'Bloque',open_box:'Caja abierta',cylinder:'Cilindro / cono',open_cylinder:'Recipiente redondo',revolve:'Pieza por perfil',ellipsoid:'Elipsoide',capsule:'Cápsula',torus:'Anillo',sphere:'Esfera',extrude:'Contorno extruido',text:'Texto o ícono en volumen',engrave_text:'Grabado',emboss_text:'Relieve',union:'Unión',subtract:'Sustracción / hueco',intersect:'Intersección'};
 const faceNames={top:'Arriba',bottom:'Abajo',front:'Frente',back:'Atrás',left:'Izquierda',right:'Derecha',around:'Alrededor (curvo)'};
 const iconNames={'':'— (texto)',heart:'Corazón',paw:'Huellita',star:'Estrella',leaf:'Hoja',flower:'Flor',bone:'Hueso',house:'Casa',moon:'Luna'};
 const fontLabels={'':'Preferida',gentilis:'Clásica',helvetiker:'Moderna',optimer:'Elegante'};
 const fieldsOf={
- box:['size'],open_box:['size','wallThickness','floorThickness'],cylinder:['radius','radiusTop','height'],open_cylinder:['radius','radiusTop','height','wallThickness','floorThickness'],
+ ellipsoid:['size'],capsule:['radius','height'],torus:['radius','radiusTop'],box:['size'],open_box:['size','wallThickness','floorThickness'],cylinder:['radius','radiusTop','height'],open_cylinder:['radius','radiusTop','height','wallThickness','floorThickness'],
  revolve:['points','wallThickness','floorThickness'],sphere:['radius'],extrude:['height'],text:['icon','text','font','fontSize','height'],
  engrave_text:['icon','text','font','fontSize','height','face','offset'],emboss_text:['icon','text','font','fontSize','height','face','offset']
 };

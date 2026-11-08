@@ -30,6 +30,8 @@ Abrir `http://127.0.0.1:5173/` (o hacer doble clic en **Iniciar taller.cmd**). `
 - Cada propuesta de la guía se construye y se compara con las medidas que declaró; si no coincide, se corrige sola antes de mostrarse. Se ve como **vista previa** translúcida antes de aplicarla.
 - **Chat con Alfred**: Enter envía, Shift + Enter agrega una línea. Podés detener la consulta, ajustar una propuesta pendiente o hacer preguntas sin perderla. **Aplicar** cambia la pieza; **Descartar** conserva el diseño actual. En celular, las pestañas alternan entre el chat y la pieza 3D. Ajustes y fabricación se abren a demanda.
 - **Formas precisas**: «Redonda · círculo» tiene un único diámetro; «Rectángulo redondeado» conserva la forma de los proyectos anteriores (`round`). «Ovalada» permite ancho y alto distintos. Las cotas del visor distinguen propuesta sin aplicar y pieza actual.
+- **Motor creativo**: el chat distingue objetos con medidas de motivos visuales. Escudos, dibujos, rostros y galaxias pueden convertirse en **relieves monocromos con fondo plano**, desde una ilustración de OpenAI o una imagen adjunta. Ancho, alto, base y profundidad se ajustan antes de aplicar; recalcular medidas sobre la misma imagen no vuelve a llamar a OpenAI.
+- **Más geometría nativa**: elipsoides, cápsulas y anillos, combinables con el resto de las operaciones. Las esculturas orgánicas detalladas de 360° siguen fuera del motor actual; una versión geométrica estilizada requiere aceptar esa simplificación. No se integra Meshy ni se requiere otra cuenta.
 
 ## Revisión y salida
 
@@ -44,7 +46,11 @@ Abrir `http://127.0.0.1:5173/` (o hacer doble clic en **Iniciar taller.cmd**). `
 
 OpenAI Responses API con salida estructurada (`gpt-4.1` por defecto; `OPENAI_MODEL` lo cambia). `store:false`. Se envían el pedido, la conversación reciente, el diseño (sin mallas importadas ni contornos de logo), el estilo y la imagen adjunta.
 
+La generación visual usa Images API (`gpt-image-1.5`, configurable con `OPENAI_IMAGE_MODEL`) con la misma clave del servidor. Requiere acceso a imágenes y créditos en la cuenta. El mapa de alturas se convierte en una malla cerrada en el navegador, con fondo plano y base mínima de 1,2 mm. La respuesta de imágenes se limita a 4 MB de base64 y el tiempo de la función a 180 segundos. Si la generación no está disponible, se puede convertir una imagen adjunta directamente. El proyecto editable conserva la malla y las medidas del relieve, no la imagen original.
+
 `node scripts/evaluate-assistant.mjs` ejecuta siete casos reales con la clave local (consume API); no forma parte de `npm test`. Comprueba interpretación de círculo y diámetro, ajustes de una propuesta sin aplicar, consultas sin cambios, óvalo, grabado del dorso y caja abierta. También construye los sólidos para verificar las propuestas.
+
+`node scripts/evaluate-creative.mjs` prueba seis pedidos creativos reales. `--image` agrega una generación real de una galaxia y guarda su mapa en `muestras/`. Estas pruebas consumen API; las pruebas geométricas de `npm test` usan datos sintéticos sin red. [Alcance y validación del motor creativo](CREATIVE-ENGINE.md).
 
 Vercel: proyecto `alejano910/taller-3d`, conectado a `alejanomiranda-dot/taller-3D` (rama `main`; cada push publica). El sitio es público; el asistente exige `ASSISTANT_ACCESS_CODE` (variable secreta del servidor, mínimo 8 caracteres). Sin ella, el asistente queda cerrado. Limita intentos fallidos y pedidos por hora por instancia; el tope de gasto mensual en OpenAI es el límite definitivo. `OPENAI_API_KEY` y `ASSISTANT_ACCESS_CODE` nunca con prefijo `VITE_`. La copia local lee ambas de `.env.local` (no se sube).
 

@@ -5,8 +5,9 @@ const labels={project:'Proyecto',name:'Nombre',phone:'Identificación',qrText:'T
 const sizeText=v=>v.map(x=>Number(x.toFixed(1)).toLocaleString('es-AR')).join(' × ')+' mm';
 
 // Verify the actual solid before offering Apply, rather than trusting the reply.
-export function checkProposal(api,base,result){
- const candidate=validate({...base,...result.params}),built=buildModel(api,candidate);
+export function checkProposal(api,base,result,pending=null){
+ const source=result.designSource==='pending'&&pending?pending:base;
+ const candidate=validate({...base,...source,...result.params}),built=buildModel(api,candidate);
  if(candidate.kind==='free'&&result.expectedSize){
   const got=built.dimensions,want=result.expectedSize;
   if(got.some((v,i)=>Math.abs(v-want[i])>Math.max(1,want[i]*.03)))throw Error('La pieza construida mide '+sizeText(got)+' pero se esperaba '+sizeText(want)+'. Ubicación real de cada operación (mm, antes de centrar): '+built.operationBounds.map(o=>o.index+' '+o.type+' X '+o.min[0].toFixed(1)+'..'+o.max[0].toFixed(1)+' Y '+o.min[1].toFixed(1)+'..'+o.max[1].toFixed(1)+' Z '+o.min[2].toFixed(1)+'..'+o.max[2].toFixed(1)).join('; ')+'.');
@@ -21,6 +22,8 @@ export function proposalChanges(base,candidate){
   if(JSON.stringify(candidate[key])===JSON.stringify(base[key]))continue;
   if(key==='shape')changes.push('Forma: '+shapeNames[candidate.shape]);
   else if(key==='kind')changes.push('Diseño: '+({tag:'Chapita',qr:'Llavero QR',logo:'Llavero con logo',free:'Pieza a medida'}[candidate.kind]));
+  else if(key==='importedMesh')changes.push(candidate.sourceInfo?'Nueva geometría del relieve':'Nueva geometría de la pieza importada');
+  else if(key==='sourceInfo'&&candidate.sourceInfo)changes.push('Relieve: base de '+candidate.sourceInfo.baseThickness+' mm y profundidad de '+candidate.sourceInfo.depth+' mm');
   else if(key==='freeDesign')changes.push('Nueva geometría de la pieza');
   else if(key==='backDecoration')changes.push('Dorso: '+(candidate[key]==='bone'?'Huesito':'Sin decoración'));
   else if(key==='backStyle')changes.push('Dorso: '+(candidate[key]==='raised'?'Relieve':'Grabado'));
