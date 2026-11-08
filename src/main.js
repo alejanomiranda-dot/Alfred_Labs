@@ -1,4 +1,5 @@
 import './style.css';
+import {mountForge} from './forge-ui.js';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {SVGLoader} from 'three/addons/loaders/SVGLoader.js';
@@ -21,6 +22,7 @@ import {reviewPrint,costOf,durationText,composeRotation} from './printability.js
 import {loadSettings,saveSettings,money,settingDefaults} from './settings.js';
 import {prepareImport,describeImport} from './solid-program.js';
 const $=id=>document.getElementById(id),storageKey='taller-vero-projects-v1';
+let forgeUI=null;
 let params={...defaults},model=null,api=null,timer,toastTimer,renderer,scene,camera,controls,group,stageGrid,wireframe=false,renderDirty=true,tools=null;
 // Colored parts of a model: templates have base + relief; free designs can have several colors.
 function partsOf(m,p){return m.parts||[{mesh:m.base,color:p.baseColor},{mesh:m.detail,color:p.detailColor}];}
@@ -102,7 +104,7 @@ function sync(){
  $('designForm').classList.toggle('free-mode',params.kind==='free');$('freeInfo').hidden=params.kind!=='free';if(params.kind==='free')$('freeOperations').textContent=(params.freeDesign?.nodes||[]).map((n,i)=>(i+1)+'. '+({box:'Bloque',open_box:'Caja abierta · paredes y fondo',imported:'Pieza importada del archivo',open_cylinder:'Recipiente redondo · paredes y fondo',revolve:'Pieza de revolución (perfil por tramos)',engrave_text:'Texto grabado',emboss_text:'Texto en relieve',cylinder:'Cilindro / cono',sphere:'Esfera',extrude:'Contorno extruido',text:'Texto',union:'Unión',subtract:'Sustracción / hueco',intersect:'Intersección'}[n.type]||n.type)).join('\n')||'Todavía no hay geometría. Empecemos por tu idea.';
  if($('opEditor')){if(params.kind==='free'&&params.freeDesign)renderOpEditor($('opEditor'),params.freeDesign,editProgram);else $('opEditor').replaceChildren();}updateHistoryButtons();
  $('logoNote').textContent=params.logoPolygons?'Logo vectorial cargado. El relieve usa un solo color.':'Usá un SVG con formas rellenas y textos convertidos a curvas. Se crea un relieve de un color.';
- render();
+ render();forgeUI?.sync();
 }
 $('designForm').addEventListener('submit',e=>e.preventDefault());
 $('designForm').addEventListener('input',e=>{if(!(e.target.id in defaults))return;rememberState();params[e.target.id]=e.target.type==='number'?Number(e.target.value):e.target.value;if(params.shape==='circle'&&params.kind!=='free')params.height=params.width;invalidateProposal();invalidateAssistantUndo();model=null;setExportEnabled(false);clearTimeout(timer);timer=setTimeout(render,180);});
@@ -211,7 +213,7 @@ function sizeText(v){return v.map(x=>String(Math.round(x*10)/10).replace('.',','
 $('assistantPrompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(!assistantBusy&&!$('askAssistant').disabled)$('assistantForm').requestSubmit();}});
 $('stopAssistant').onclick=()=>{requestController?.abort();};
 $('assistantForm').onsubmit=async e=>{
- e.preventDefault();if(!localAssistant||assistantBusy)return;
+ e.preventDefault();if(forgeUI?.isBusy()){toast('Esperá a que termine Forge o detené la generación.');return;}if(!localAssistant||assistantBusy)return;
  const prompt=$('assistantPrompt').value.trim();if(!prompt)return;
  invalidateProposal();
  const snapshot=JSON.stringify(params),base=JSON.parse(snapshot),epoch=projectEpoch,serial=++requestSerial,maxAttempts=3;
@@ -221,7 +223,7 @@ $('assistantForm').onsubmit=async e=>{
  try{let result,checked=null,correction,lastError='';
   for(let attempt=1;attempt<=maxAttempts;attempt++){
    if(attempt>1){$('assistantReply').textContent='Comprobando la pieza y ajustando la propuesta…';await new Promise(r=>setTimeout(r,2100));controller.signal.throwIfAborted();if(epoch!==projectEpoch)return;}
-   const response=await fetch('/api/assistant',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json',...(sessionCode?{'X-Access-Code':sessionCode}:{})},body:JSON.stringify({prompt,style:settings,params:{...base,importedMesh:undefined},history:recent,imageDataUrl:image,...(pending?{pendingProposal:pending}:{}),...(base.importedMesh?{importedSummary:{name:base.importedMesh.name,size:importedSize(base.importedMesh),...describeImport(api,base.importedMesh)}}:{}),...(correction?{correction}:{})})});
+   const response=await fetch('/api/assistant',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json',...(sessionCode?{'X-Access-Code':sessionCode}:{})},body:JSON.stringify({prompt,style:settings,params:{...base,importedMesh:undefined,forge:undefined},history:recent,imageDataUrl:image,...(pending?{pendingProposal:pending}:{}),...(base.importedMesh?{importedSummary:{name:base.importedMesh.name,size:importedSize(base.importedMesh),...describeImport(api,base.importedMesh)}}:{}),...(correction?{correction}:{})})});
    result=await response.json();if(epoch!==projectEpoch||serial!==requestSerial)return;
    if(response.status===401){sessionCode='';try{localStorage.removeItem(codeKey);}catch{}askForCode(result.error+' Volvé a ingresarlo.');throw Error('Hace falta el código de acceso.');}
    if(!response.ok)throw Error(result.error||'No se pudo obtener una propuesta.');
@@ -246,7 +248,7 @@ $('assistantForm').onsubmit=async e=>{
  }finally{if(serial===requestSerial){requestController=null;setAssistantBusy(false);}}
 };
 $('applyProposal').onclick=()=>{
- if(!proposal||assistantBusy)return;
+ if(!proposal||assistantBusy||forgeUI?.isBusy())return;
  if(JSON.stringify(params)!==proposalBase){invalidateProposal();toast('La pieza cambió. Pedí una propuesta nueva.');return;}
  const next=proposal;previousDesign=structuredClone(params);clearProposal();rememberState();params=next;previousAppliedSnapshot=JSON.stringify(params);sync();
  if(camera)resetView(false,params.kind!=='free'&&params.backDecoration==='bone');
@@ -285,7 +287,7 @@ modelInput.onchange=async()=>{const file=modelInput.files[0];modelInput.value=''
 // Proposal preview: the guide's piece is drawn translucent over the current one before applying it.
 function showGhost(built,candidate){previewModel=built;previewParams=candidate;if(!tools)return;tools.setGhost(built,partsOf(built,candidate));setGhostMode('proposal');$('loading').style.display='none';ghostFit=!model||Math.max(...(built.dimensions||[0]))>Math.max(...(model.dimensions||[1]))*1.3?built:null;if(camera)resetView(true,false,built);$('ghostSwitch').hidden=false;}
 function hideGhost(){tools?.setGhost(null);ghostFit=null;previewModel=null;previewParams=null;if($('dimensions'))updatePreviewStats(false);if(params.kind==='free'&&!params.freeDesign&&$('loading'))$('loading').style.display='block';if($('ghostSwitch'))$('ghostSwitch').hidden=true;}
-function updatePreviewStats(showPreview){const ref=showPreview?previewModel:model,p=showPreview?previewParams:params;if(!p)return;document.querySelector('.live').innerHTML='<i></i>'+(showPreview?'PROPUESTA · SIN APLICAR':'PIEZA ACTUAL');$('dimensions').textContent=ref?sizeText(ref.dimensions||[p.width,p.height]):'Por definir';$('totalHeight').textContent=ref?ref.totalHeight.toFixed(1).replace('.',',')+' mm':'—';}
+function updatePreviewStats(showPreview){const ref=showPreview?previewModel:model,p=showPreview?previewParams:params;if(!p)return;document.querySelector('.live').innerHTML='<i></i>'+(showPreview?'PROPUESTA · SIN APLICAR':'PIEZA ACTUAL');$('dimensions').textContent=ref?sizeText(ref.dimensions||[p.width,p.height]):'Por definir';$('totalHeight').textContent=ref?ref.totalHeight.toFixed(1).replace('.',',')+' mm':'—';$('partLabel').textContent=p.kind==='free'?(p.forge?'Forge · sólido importado':'Diseño libre'):'Base + relieve';}
 function setGhostMode(mode){tools?.setGhostMode(mode);updatePreviewStats(mode!=='current'&&Boolean(previewModel));for(const b of document.querySelectorAll('[data-ghost]'))b.setAttribute('aria-pressed',String(b.dataset.ghost===mode));}
 for(const b of document.querySelectorAll('[data-ghost]'))b.onclick=()=>setGhostMode(b.dataset.ghost);
 
@@ -331,3 +333,17 @@ $('quotePdf').onclick=()=>{render();if(!model||!camera)return;if(!review)runRevi
  toast('Se abrió el diálogo de impresión: elegí «Guardar como PDF».');};
 
 function modelSize(){if(model.dimensions)return model.dimensions;const p=model.combined.positions,k=model.combined.numProp,min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];for(let i=0;i<p.length;i+=k)for(let j=0;j<3;j++){min[j]=Math.min(min[j],p[i+j]);max[j]=Math.max(max[j],p[i+j]);}return max.map((v,j)=>v-min[j]);}
+
+
+// Forge shares the proven proposal/preview/apply flow; compiler code stays server-side.
+forgeUI=mountForge({host:assistant,api,getContext:()=>({current:params,pending:proposal,epoch:projectEpoch,busy:assistantBusy}),download,toast,onBusy:busy=>{$('applyProposal').disabled=busy||assistantBusy;$('discardProposal').disabled=busy||assistantBusy;},onView:()=>showWorkspaceView('piece',false),offerProposal:(checked,base)=>{
+ if(JSON.stringify(params)!==base)throw Error('La pieza cambió. Volvé a generar la propuesta.');
+ proposal=checked.candidate;proposalBase=base;
+ $('proposalSummary').textContent='Alfred Forge · '+sizeText(checked.built.dimensions)+' · sin aplicar';
+ $('proposalChanges').replaceChildren(...['Reemplazar la geometría por la versión de Forge seleccionada.','Conservar fuente OpenSCAD e historial en el proyecto editable.','Tu pieza actual se conserva hasta que uses Aplicar.'].map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));
+ $('proposalCard').hidden=false;$('applyProposal').hidden=false;showGhost(checked.built,checked.candidate);if(camera)resetView(false,false,checked.built);
+}});
+// Keep the shared proposal reachable in either design mode.
+assistant.append($('proposalCard'));
+const forgeStart=document.createElement('button');forgeStart.id='startForge';forgeStart.className='start-card';forgeStart.innerHTML='<span>✦</span><b>Alfred Forge</b><small>Creá con OpenSCAD · experimental local.</small>';document.querySelector('.start-options').append(forgeStart);
+forgeStart.onclick=()=>{forgeUI.open();showWorkspaceView('chat',false);assistant.scrollIntoView({behavior:'smooth',block:'start'});};
