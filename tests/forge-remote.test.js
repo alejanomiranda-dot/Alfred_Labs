@@ -29,12 +29,12 @@ test('remoto: abortar detiene la VM y no aplica resultados; producción cerrada 
 });
 async function call(handler,{method='POST',headers={},body={action:'compile',scad}}={}){
  let status,data;const res={setHeader(){},status(v){status=v;return this;},json(v){data=v;return this;}};
- await handler({method,headers:{host:'preview.test',origin:'https://preview.test','content-type':'application/json','x-access-code':env.ASSISTANT_ACCESS_CODE,'x-real-ip':'1.1.1.1',...headers},body},res);return {status,data};
+ await handler({method,headers:{host:'preview.test',origin:'https://preview.test','content-type':'application/json','x-real-ip':'1.1.1.1',...headers},body},res);return {status,data};
 }
-test('API remota: código/origen/JSON y cuota se comprueban antes de crear una VM o gastar API',async()=>{
+test('API remota: sin código; origen/JSON y cuota se comprueban antes de crear una VM o gastar API',async()=>{
  let runs=0;const handler=createForgeHandler({env,run:async()=>{runs++;return {ok:true};}});
  const status=await call(handler,{method:'GET'});assert.equal(status.data.remote,true);assert.equal(JSON.stringify(status.data).includes('private-test'),false);
- assert.equal((await call(handler,{headers:{'x-access-code':'wrong'}})).status,401);
+ assert.equal(status.data.needsCode,false);
  assert.equal((await call(handler,{headers:{origin:'https://evil.test'}})).status,403);
  assert.equal((await call(handler,{headers:{'content-type':'text/plain'}})).status,415);
  assert.equal((await call(handler,{body:'{bad'})).status,400);

@@ -40,16 +40,16 @@ try{
  await page.locator('#libraryToggle').click();await page.locator('.library-card button').filter({hasText:'Abrir'}).first().click();assert.match(await page.locator('#forgeCode').textContent(),/VERO/);
  await page.setViewportSize({width:390,height:844});await page.locator('[data-workspace-view="chat"]').click();await page.screenshot({path:'artifacts/forge/mobile.png',fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await page.setViewportSize({width:1440,height:1000});
- let remoteCode;
+ let remoteHeaders;
  await page.route('**/api/forge',async route=>{
-  if(route.request().method()==='GET')return route.fulfill({json:{local:false,remote:true,enabled:true,compiler:true,ai:true,needsCode:true}});
-  remoteCode=route.request().headers()['x-access-code'];return route.fulfill({json:{...sampleResult,remote:true}});
+  if(route.request().method()==='GET')return route.fulfill({json:{local:false,remote:true,enabled:true,compiler:true,ai:true,needsCode:false}});
+  remoteHeaders=route.request().headers();return route.fulfill({json:{...sampleResult,remote:true}});
  });
- await page.evaluate(()=>localStorage.removeItem('alfred-acceso-guia'));
- await page.locator('#forgeRefresh').click();await page.locator('#forgeAccessCode').waitFor({state:'visible'});
- await page.locator('#forgeAccessCode').fill('browser-test-code');await page.locator('#forgeAccess button').click();
+ await page.locator('#forgeRefresh').click();
+ assert.equal(await page.locator('#forgeAccess').count(),0);
+ assert.equal(await page.locator('#accessPanel').count(),0);
  await page.waitForFunction(()=>!document.getElementById('forgeGenerate').disabled);
  await page.locator('#forgeExample').click();await page.waitForFunction(()=>document.getElementById('forgeProgress').textContent.startsWith('Vista previa lista'));
- assert.equal(remoteCode,'browser-test-code');await page.screenshot({path:'artifacts/forge/online-ui.png',fullPage:true});
- assert.deepEqual(errors,[]);console.log('FORGE BROWSER OK: preview, compare, failure preserves proposal, apply, downloads, restore, discard, library, mobile, remote access-code flow.');
+ assert.equal(remoteHeaders['x-access-code'],undefined);await page.screenshot({path:'artifacts/forge/online-ui.png',fullPage:true});
+ assert.deepEqual(errors,[]);console.log('FORGE BROWSER OK: preview, compare, failure preserves proposal, apply, downloads, restore, discard, library, mobile, remote flow without access code.');
 }catch(e){console.error(logs);throw e;}finally{await browser?.close();server.kill();}

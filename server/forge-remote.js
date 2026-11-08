@@ -6,8 +6,7 @@ const worker=()=>fs.readFile(new URL('./forge-worker.mjs',import.meta.url));
 const fail=(message,status=503,code='sandbox_unavailable')=>Object.assign(Error(message),{status,code});
 export function remoteForgeStatus(env=process.env){
  const enabled=env.VERCEL_ENV==='preview'||env.FORGE_REMOTE_ENABLED==='true';
- const access=typeof env.ASSISTANT_ACCESS_CODE==='string'&&env.ASSISTANT_ACCESS_CODE.length>=8;
- return {local:false,remote:true,enabled,compiler:enabled,ai:enabled&&access&&!!env.OPENAI_API_KEY,needsCode:true,sample:true,maxSecondsPerFormat:60};
+ return {local:false,remote:true,enabled,compiler:enabled,ai:enabled&&!!env.OPENAI_API_KEY,needsCode:false,sample:true,maxSecondsPerFormat:60};
 }
 export async function runRemoteForge(raw,{env=process.env,signal,createSandbox=options=>Sandbox.create(options),fetcher}={}){
  const body=validateForgeRequest(raw);

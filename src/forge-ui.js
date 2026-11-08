@@ -8,7 +8,7 @@ export function mountForge({host,api,getContext,offerProposal,download,toast,onV
  const panel=document.createElement('section');panel.id='forgePanel';panel.hidden=true;
  panel.innerHTML=`<div class="chat-heading"><div><span class="eyebrow">GENERACIÓN EXPERIMENTAL</span><h2>Alfred Forge</h2></div></div>
  <p>Describí tu pieza y revisá la propuesta en la mesa 3D antes de aplicarla.</p>
- <form id="forgeAccess" class="access-panel" hidden><label>Código de acceso de Alfred<input id="forgeAccessCode" type="password" autocomplete="current-password" minlength="8" maxlength="200" required></label><button class="secondary" type="submit">Habilitar Forge</button></form>
+
  <p id="forgeAvailability" class="hint" role="status">Comprobando OpenSCAD…</p>
  <div class="review-actions"><button type="button" class="secondary" id="forgeExample">Abrir árbol de muestra · sin IA</button><button type="button" class="subtle" id="forgeRefresh">Comprobar disponibilidad</button></div>
  <div id="forgeConversation" class="conversation" role="log" aria-label="Conversación con Forge" aria-live="polite"></div>
@@ -23,13 +23,13 @@ export function mountForge({host,api,getContext,offerProposal,download,toast,onV
  panel.querySelector('#forgeForm').after(panel.querySelector('#forgeConversation'));
  const switchMode=forge=>{cad.hidden=forge;panel.hidden=!forge;tabs.querySelector('#cadMode').setAttribute('aria-pressed',String(!forge));tabs.querySelector('#forgeMode').setAttribute('aria-pressed',String(forge));if(forge){sync();$('forgePrompt').focus();}};
  tabs.querySelector('#cadMode').onclick=()=>switchMode(false);tabs.querySelector('#forgeMode').onclick=()=>switchMode(true);
- let accessCode='';try{accessCode=localStorage.getItem('alfred-acceso-guia')||'';}catch{}
+
  let status=null,busy=false,controller=null,archive=null,messages=[],epoch=-1,selectedFiles=null,selectedFileId=null,serial=0;
  function message(role,content){messages.push({role,content});messages=messages.slice(-16);const row=document.createElement('div');row.className='chat-message '+role;const who=document.createElement('strong'),p=document.createElement('p');who.textContent=role==='user'?'Vos':'Forge';p.textContent=content;row.append(who,p);$('forgeConversation').append(row);while($('forgeConversation').children.length>16)$('forgeConversation').firstChild.remove();$('forgeConversation').scrollTop=$('forgeConversation').scrollHeight;}
  function selected(){return archive?.revisions.find(r=>r.id===archive.selected);}
  function controls(){
-  const authorized=status?.local||!!accessCode;const usable=(status?.local||status?.remote)&&status?.compiler&&authorized;
-  $('forgeExample').disabled=busy||!(status?.local||(status?.remote&&status?.enabled))||!authorized;$('forgeGenerate').disabled=busy||!usable||!status?.ai;
+  const usable=(status?.local||status?.remote)&&status?.compiler;
+  $('forgeExample').disabled=busy||!(status?.local||(status?.remote&&status?.enabled));$('forgeGenerate').disabled=busy||!usable||!status?.ai;
   $('forgeRefresh').disabled=busy;$('forgeStop').hidden=!busy;
   for(const id of ['forgeVersion','forgeSource'])$(id).disabled=busy||!selected();$('forgeRestore').disabled=busy||!selected()||!usable;
   $('forgeBundle').disabled=busy||selectedFileId!==archive?.selected||!selectedFiles;
@@ -49,16 +49,14 @@ export function mountForge({host,api,getContext,offerProposal,download,toast,onV
   }
  }
  async function refresh(){
-  if(!accessCode){try{accessCode=localStorage.getItem('alfred-acceso-guia')||'';}catch{}}
   try{
    const response=await fetch('/api/forge');if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error();status=await response.json();
-   $('forgeAccess').hidden=!status.remote||!!accessCode;
-   $('forgeAvailability').textContent=status.remote?(!status.enabled?'Forge en línea aún no está habilitado.':!accessCode?'Ingresá el mismo código de acceso de la guía para generar y compilar en línea.':!status.ai?'Compilación aislada disponible. La IA no está configurada.':'Forge en línea listo. Las piezas se compilan en una máquina aislada.'):
+   $('forgeAvailability').textContent=status.remote?(!status.enabled?'Forge en línea aún no está habilitado.':!status.ai?'Compilación aislada disponible. La IA no está configurada.':'Forge en línea listo. Las piezas se compilan en una máquina aislada.'):
     !status.compiler?'Falta OpenSCAD. Podés abrir la muestra precompilada; instalalo para crear o corregir piezas.':!status.ai?'OpenSCAD listo. Sin clave de IA: podés abrir la muestra y recompilar versiones.':'OpenSCAD e IA configurados. Listo para generar propuestas.';
   }catch{status=null;$('forgeAvailability').textContent='No se pudo comprobar Forge. Volvé a intentar en unos segundos.';}
   controls();
  }
- $('forgeAccess').onsubmit=e=>{e.preventDefault();accessCode=$('forgeAccessCode').value.trim();$('forgeAccessCode').value='';try{localStorage.setItem('alfred-acceso-guia',accessCode);}catch{}refresh();};
+
  async function request(action,prompt=''){
   sync();if(busy)return;
   const context=getContext();if(context.busy){toast('Esperá a que termine la consulta con la Guía CAD.');return;}
@@ -71,9 +69,9 @@ export function mountForge({host,api,getContext,offerProposal,download,toast,onV
   // A local watchdog also bounds stalled HTTP connections; cancellation reaches the compiler.
   const timer=setTimeout(()=>ownController.abort(),345000);
   try{
-   const response=await fetch('/api/forge',{method:'POST',headers:{'Content-Type':'application/json',...(status?.remote&&accessCode?{'X-Access-Code':accessCode}:{})},signal:ownController.signal,body:JSON.stringify(body)});
+   const response=await fetch('/api/forge',{method:'POST',headers:{'Content-Type':'application/json'},signal:ownController.signal,body:JSON.stringify(body)});
    if(!response.headers.get('content-type')?.includes('application/json'))throw Error('El servidor de Forge no está disponible. Volvé a comprobar la disponibilidad.');
-   const result=await response.json();if(response.status===401){accessCode='';try{localStorage.removeItem('alfred-acceso-guia');}catch{}$('forgeAccess').hidden=false;controls();}if(!response.ok)throw Error(result.error||'No se pudo generar la pieza.');
+   const result=await response.json();if(!response.ok)throw Error(result.error||'No se pudo generar la pieza.');
    if(requestSerial!==serial||requestEpoch!==getContext().epoch)return;
    if(JSON.stringify(getContext().current)!==base)throw Error('La pieza cambió durante la generación. Tu diseño se conservó; volvé a enviar el pedido.');
    const revision=action==='compile'?previous:revisionFromResult(result,action==='example'?'Árbol VERO y ALE · muestra':prompt);

@@ -4,17 +4,17 @@ Describí piezas procedurales, revisá una propuesta en el visor del taller, cor
 
 ## Prueba en línea en Vercel
 
-La rama `feature/alfred-forge-mvp` publica una Preview separada de producción. Elegí **Alfred Forge**, ingresá el mismo **código de acceso de la guía** y abrí la muestra o enviá un pedido. No hace falta instalar OpenSCAD en tu computadora para este modo.
+La rama `feature/alfred-forge-mvp` publica una Preview separada de producción. Elegí **Alfred Forge** y abrí la muestra o enviá un pedido. No hace falta instalar OpenSCAD en tu computadora para este modo.
 
-`api/forge.js` valida origen, código y cuota antes de gastar recursos. El servidor llama a OpenAI y crea una **Vercel Sandbox** efímera desde una imagen con OpenSCAD y Liberation Sans. La VM recibe únicamente fuente y runner, nunca la clave de OpenAI ni el token de Vercel; arranca con `deny-all`, sin puertos y sin persistencia. El proceso web de Vercel no ejecuta OpenSCAD.
+`api/forge.js` valida origen, tamaño y cuota antes de gastar recursos. El servidor llama a OpenAI y crea una **Vercel Sandbox** efímera desde una imagen con OpenSCAD y Liberation Sans. La VM recibe únicamente fuente y runner, nunca la clave de OpenAI ni el token de Vercel; arranca con `deny-all`, sin puertos y sin persistencia. El proceso web de Vercel no ejecuta OpenSCAD.
 
 Límites de Preview: 1 vCPU/2 GiB por VM, 60 s por formato, 128 KiB de logs, 1 MiB por archivo y 230 s de vida máxima de la VM. Se detiene al finalizar, al fallar o al cancelar. El límite menor de archivo mantiene la respuesta JSON por debajo del máximo de Vercel Functions. Si la pieza es demasiado detallada, pedí menos resolución o usá el modo local.
 
-La muestra y recompilación no usan IA, pero **sí consumen cómputo de Sandbox**. Generar/corregir usa además OpenAI. Se permiten 20 pedidos/hora/IP y 1 trabajo concurrente **por instancia**; no es una cuota global entre instancias. La Preview conserva la protección de acceso de Vercel y el código de Alfred. No se cambió producción.
+La muestra y recompilación no usan IA, pero **sí consumen cómputo de Sandbox**. Generar/corregir usa además OpenAI. Se permiten 20 pedidos/hora/IP y 1 trabajo concurrente **por instancia**; no es una cuota global entre instancias. La Preview conserva la protección de acceso de Vercel ; no se pide código dentro de la aplicación. No se cambió producción.
 
 Configuración:
 
-- `OPENAI_API_KEY` y `ASSISTANT_ACCESS_CODE`: se reutilizan del servidor; no se leen ni copian al navegador/VM.
+- `OPENAI_API_KEY`: se reutiliza del servidor; no se leen ni copian al navegador/VM.
 - `FORGE_SANDBOX_SNAPSHOT_ID`: opcional, reemplaza la imagen de prueba registrada en `server/forge-sandbox-config.js`.
 - La imagen inicial de prueba fue preparada el **8 de noviembre de 2026** y vence el **15 de noviembre**. Hay que renovarla antes de esa fecha. Contiene herramientas de sistema, sin fuentes ni piezas de usuarios.
 - Para preparar otra imagen con credenciales de desarrollo de Vercel ya configuradas: `node scripts/provision-forge-snapshot.mjs`. El script instala herramientas confiables, bloquea la red y crea una imagen de 30 días; muestra solo el identificador a configurar. No es un endpoint de la web.
@@ -94,4 +94,4 @@ El modo remoto usa el worker aislado descrito arriba. Antes de abrir el servicio
 - Generación y corrección con la clave real, cuota y modelo configurados.
 - Fuente tipográfica disponible y legibilidad de VERO/ALE.
 - Apertura en Bambu Studio, perfil correcto, soportes, tolerancias e impresión física.
-- El acceso remoto con el código real y la generación con OpenAI deben comprobarse en la Preview. No se implementó Wi-Fi ni inicio de impresión; siempre requieren revisión y aprobación humana.
+- La generación remota con OpenAI deben comprobarse en la Preview. No se implementó Wi-Fi ni inicio de impresión; siempre requieren revisión y aprobación humana.
