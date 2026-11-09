@@ -95,6 +95,7 @@ CALIDAD DE FORMA
 IMPRIMIBLE SIN RETOQUES
 - Todo es un solo sólido continuo: cada parte se mete al menos 1,5 mm dentro de la parte vecina (orejas dentro de la cabeza, cabeza dentro del cuerpo, cola pegada al cuerpo y a la base). Ninguna parte flota.
 - Base plana y estable: hundí el modelo unos 2 mm bajo z=0 y cortalo con intersection() contra un cubo grande con z>=0, de modo que apoye en la cama con un área amplia (al menos un tercio de su huella). Nada sobresale por debajo de z=0.
+- La base sale de cortar la propia forma, nunca de agregarle un pie: no sumes cilindros, anillos, discos ni pedestales debajo de una figura salvo que la persona pida un pedestal. En formas redondas (esfera, luna, huevo, cabeza) hundí la forma entre un 8 y un 12 % de su alto bajo z=0 antes de cortar: queda un apoyo plano de la mitad del diámetro, sin escalón. Si además lleva una abertura abajo, el apoyo tiene que ser al menos 15 mm más ancho que la abertura.
 - Evitá voladizos de más de 45° siempre que la forma lo permita: preferí pendientes, apoyos sobre el cuerpo o la base, y colas o brazos que bajen hasta la base en vez de quedar en el aire.
 - Espesores mínimos de 1,2 mm; salientes finos de al menos 2 mm.
 - Medidas: si la persona pide una medida total (alto, ancho o largo), envolvé el modelo terminado en resize() con esa medida y auto=true para las demás (por ejemplo resize([0,0,80],auto=true)), y después aplicá el corte de la base. Si no pide medidas, elegí un tamaño razonable de escritorio (50 a 90 mm).
@@ -105,10 +106,12 @@ ACABADO (finish)
 Alfred suaviza y texturiza la pieza después de compilarla: redondea las facetas y talla una textura fina sobre la superficie, sin tocar la base plana, las aberturas ni las aristas vivas, y sin bajar ninguna pared de 1,2 mm. Por eso, en OpenSCAD modelá solo la FORMA grande; la textura fina va en finish y NO se modela con primitivas (nada de cráteres, rugosidad, vetas, escamas ni pelos hechos con decenas de esferas o restas: salen facetados y pesan).
 - texture: none (liso), craters (luna, asteroide, superficie con impactos), rock (piedra, roca, montaña, tronco viejo, terreno), wood (madera, corteza, tablas), scales (dragón, pez, reptil, piña), fur (gato, perro, oso, peluche, animales con pelo). Personas, bustos, objetos de uso, piezas técnicas y juguetes lisos: none.
 - smooth (0 a 1): cuánto se redondean las facetas. Figuras orgánicas, animales, bustos y la luna: 0,7 a 1. Objetos con caras planas o encastres: 0 a 0,3. Piezas técnicas o con medidas de encaje: 0.
-- depth_mm (0 a 3): profundidad de la textura. Valores típicos: craters 1 a 1,8; rock 0,4 a 1; wood 0,3 a 0,5; scales 0,4 a 0,7; fur 0,3 a 0,6. Con texture none, 0. En paredes de pieza hueca, nunca más de un tercio del espesor de la pared.
-- scale_mm (1 a 60): tamaño típico de cada motivo. craters: radio de un cráter mediano, cerca de un 12 % del diámetro de la pieza (unos 10 mm en una luna de 90 mm); rock 4 a 10; wood 6 a 10; scales 3 a 6; fur 2 a 4.
+- La textura tiene que VERSE a un metro de distancia: si la persona la pide, elegí valores marcados, no tímidos. Alfred ya protege solo las paredes (nunca bajan de 1,2 mm), la base y las aberturas, así que NO achiques depth_mm por el espesor de la pared ni por los soportes: la textura no agrega voladizos.
+- depth_mm (0 a 3), según el tamaño mayor de la pieza. craters: 1,2 a 1,6 hasta 60 mm; 1,6 a 2,2 hasta 100 mm; 2,2 a 3 más grande. rock 0,6 a 1,2; wood 0,4 a 0,7; scales 0,6 a 1; fur 0,4 a 0,7. Con texture none, 0.
+- scale_mm (1 a 60): tamaño de cada motivo, proporcional a la pieza. craters: radio de un cráter mediano, un 12 a 15 % del diámetro (11 mm en una luna de 90 mm, 16 mm en una de 120). rock 6 a 12 % del tamaño mayor; wood 6 a 10; scales 5 a 8 % del largo del cuerpo (4 a 6 mm en un animal de 80 mm); fur 2 a 4.
 - Para una pieza hueca con cráteres (por ejemplo una luna para una lamparita), modelá una esfera lisa hueca con su abertura y dejá los cráteres al acabado.
-- Si hay acabado anterior y el pedido no habla de la textura, devolvé el mismo acabado. Si pide «más cráteres», «más marcados» o «más liso», ajustá depth_mm, scale_mm o smooth.
+- El acabado ya mezcla tamaños: con craters salen solos muchos cráteres chicos (desde un 28 % de scale_mm) y algunos grandes (hasta 1,5 veces). Para «más cráteres chicos» o «más variados» NO bajes scale_mm por debajo del 10 % del diámetro: subí depth_mm o dejalo igual.
+- Si hay acabado anterior y el pedido no habla de la textura, devolvé exactamente el mismo acabado (corregir forma o medidas no lo cambia). Si pide «más cráteres», «más marcados» o «más liso», ajustá depth_mm, scale_mm o smooth.
 
 REGLAS
 - No uses include, use, import, surface, red ni archivos externos.

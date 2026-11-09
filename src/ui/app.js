@@ -4,9 +4,10 @@ import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import {defaults,validate,buildModel} from '../model.js';
 import {checkProposal,proposalChanges} from '../proposals.js';
 import {reviewPrint,costOf,durationText,composeRotation,countParts,partsOf as meshParts,keepParts} from '../printability.js';
-import {stlBytes} from '../export.js';
+import {stlBytes,threeMfBytes} from '../export.js';
+import {revisionName} from '../handoff.js';
 import {loadSettings,money} from '../settings.js';
-import {saveVersion,listProjects,deleteProject,countProjects,migrateLegacy} from '../library.js';
+import {saveVersion,listProjects,deleteProject,countProjects,migrateLegacy,pruneProject} from '../library.js';
 import {thumbnail} from '../studio-output.js';
 import {readMeshFile} from '../mesh-import.js';
 import {prepareImport,describeImport} from '../solid-program.js';
@@ -88,6 +89,8 @@ function apply(candidate,built,note){
  const changes=note||summarize(before,built.params);
  refresh({built});
  addMessage('event',changes+' · '+sizeText(S.model.dimensions));
+ // Historial: cada pieza que arma Alfred queda en «Mis diseños», para volver a ella o descargarla otra vez.
+ storeVersion(changes).catch(()=>{});
 }
 // Resumen en palabras simples, sin nombres internos.
 function summarize(before,after){
@@ -429,18 +432,29 @@ $('importProject').onchange=async()=>{
  try{if(file.size>40e6)throw Error('El proyecto es demasiado grande.');const candidate=validate(projectFromBytes(file.name,new Uint8Array(await file.arrayBuffer())));build(candidate);resetProject(candidate);refresh();toast('Proyecto abierto.');}
  catch(e){toast('No se pudo abrir: '+e.message);}
 };
+async function storeVersion(note){
+ if(!S.model)throw Error('Todavía no hay una pieza para guardar.');S.projectId=S.projectId||crypto.randomUUID();
+ const projectId=S.projectId,params=S.params;
+ await saveVersion({id:crypto.randomUUID(),projectId,date:new Date().toISOString(),name:params.project,note,params:validate(params),thumb:thumbnail(viewer.capture())});
+ if(S.params===params){S.dirty=false;updateSaved();}
+ await pruneProject(projectId);updateCount();
+}
 async function saveCurrent(){
- try{if(!S.model)throw Error('Todavía no hay una pieza para guardar.');S.projectId=S.projectId||crypto.randomUUID();
-  await saveVersion({id:crypto.randomUUID(),projectId:S.projectId,date:new Date().toISOString(),name:S.params.project,params:validate(S.params),thumb:thumbnail(viewer.capture())});
-  S.dirty=false;updateSaved();updateCount();toast('Guardado en «Mis diseños».');}
+ try{await storeVersion('Guardado a mano');toast('Guardado en «Mis diseños».');}
  catch(e){toast('No se pudo guardar: '+e.message);}
+}
+// Arma la pieza de una versión guardada y descarga su 3MF, sin abrirla ni tocar la pieza actual.
+async function downloadVersion(v){
+ toast('Preparando el archivo…');await tick();
+ try{const m=build(validate(v.params));download(threeMfBytes(m),revisionName(v.name)+'.3mf','model/3mf');toast('Descarga iniciada: '+sizeText(m.dimensions)+'.');}
+ catch(e){toast('No se pudo descargar: '+e.message);}
 }
 $('saveVersion').onclick=saveCurrent;
 function updateCount(){countProjects().then(n=>{$('savedCount').textContent=n;}).catch(()=>{});}
 async function showLibrary(){
  const host=$('libraryList');host.replaceChildren();let projects=[];
  try{projects=await listProjects();}catch{host.textContent='Este navegador no permite guardar proyectos.';}
- if(!projects.length&&!host.textContent)host.innerHTML='<p class="hint">Todavía no guardaste piezas. Cuando tengas una, tocá «Guardar» arriba.</p>';
+ if(!projects.length&&!host.textContent)host.innerHTML='<p class="hint">Todavía no hay piezas. Las que arme Alfred se guardan solas acá.</p>';
  const open=v=>{try{const candidate=validate(v.params);build(candidate);resetProject(candidate);S.projectId=v.projectId;refresh();$('library').close();toast('Abriste «'+v.name+'».');}catch(e){toast(e.message);}};
  for(const p of projects){
   const card=document.createElement('article');card.className='library-card';
@@ -449,10 +463,16 @@ async function showLibrary(){
   const actions=document.createElement('div');actions.className='library-actions';
   const openBtn=document.createElement('button');openBtn.className='primary';openBtn.textContent='Abrir';openBtn.onclick=()=>open(p.latest);
   const list=document.createElement('ol');list.className='version-list';list.hidden=true;
-  for(const v of p.versions){const li=document.createElement('li'),b=document.createElement('button');b.className='link';b.textContent=new Date(v.date).toLocaleString('es-AR');b.onclick=()=>open(v);li.append(b);list.append(li);}
-  const versions=document.createElement('button');versions.textContent='Versiones';versions.onclick=()=>{list.hidden=!list.hidden;};
+  for(const v of p.versions){
+   const li=document.createElement('li'),b=document.createElement('button'),file=document.createElement('button');
+   b.className='link';b.textContent=new Date(v.date).toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'})+(v.note?' · '+v.note:'');b.title='Abrir esta versión';b.onclick=()=>open(v);
+   file.className='link';file.textContent='3MF';file.title='Descargar esta versión para Bambu Studio';file.onclick=()=>downloadVersion(v);
+   li.append(b,' ',file);list.append(li);
+  }
+  const fileBtn=document.createElement('button');fileBtn.textContent='Descargar 3MF';fileBtn.onclick=()=>downloadVersion(p.latest);
+  const versions=document.createElement('button');versions.textContent='Versiones ('+p.versions.length+')';versions.onclick=()=>{list.hidden=!list.hidden;};
   const remove=document.createElement('button');remove.className='ghost';remove.textContent='Eliminar';remove.onclick=async()=>{if(!confirm('¿Eliminar «'+p.name+'» y sus '+p.versions.length+' versiones? No se puede deshacer.'))return;await deleteProject(p.projectId);if(S.projectId===p.projectId)S.projectId=null;updateCount();showLibrary();};
-  actions.append(openBtn,versions,remove);card.append(img,info,actions,list);host.append(card);
+  actions.append(openBtn,fileBtn,versions,remove);card.append(img,info,actions,list);host.append(card);
  }
  if(!$('library').open)$('library').showModal();
 }

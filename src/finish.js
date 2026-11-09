@@ -45,9 +45,19 @@ function heightField(finish,pos,eligible,area){
    const v=eligible[Math.floor(rnd()*eligible.length)],R=S*(.28+1.25*rnd()**3);
    craters.push({x:pos[v*3],y:pos[v*3+1],z:pos[v*3+2],R,d:D*(.45+.55*Math.min(1,R/S))});
   }
+  // Segunda capa: muchos cráteres chicos y poco profundos que cubren las zonas lisas, como en la Luna real.
+  const small=Math.min(320,Math.round(.35*area/(Math.PI*(.22*S)**2)));
+  for(let k=0;k<small&&eligible.length;k++){
+   const v=eligible[Math.floor(rnd()*eligible.length)],R=S*(.1+.18*rnd());
+   craters.push({x:pos[v*3],y:pos[v*3+1],z:pos[v*3+2],R,d:D*(.25+.2*rnd())});
+  }
+  // Grilla: cada punto revisa solo los cráteres de su celda y las vecinas (un cráter influye hasta 1,85 radios).
+  const g=Math.max(...craters.map(c=>c.R),1)*1.85,grid=new Map(),cellOf=(x,y,z)=>Math.floor(x/g)+','+Math.floor(y/g)+','+Math.floor(z/g);
+  for(const c of craters){const k=cellOf(c.x,c.y,c.z);if(!grid.has(k))grid.set(k,[]);grid.get(k).push(c);}
+  const near=(x,y,z)=>{const out=[],X=Math.floor(x/g),Y=Math.floor(y/g),Z=Math.floor(z/g);for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++)for(let c=-1;c<=1;c++){const l=grid.get((X+a)+','+(Y+b)+','+(Z+c));if(l)out.push(...l);}return out;};
   return (x,y,z)=>{
    let bowl=0,rim=0;
-   for(const c of craters){
+   for(const c of near(x,y,z)){
     const dx=x-c.x,dy=y-c.y,dz=z-c.z,q=(dx*dx+dy*dy+dz*dz)/(c.R*c.R);if(q>3.4)continue;
     const r=Math.sqrt(q);if(r<1)bowl=Math.min(bowl,-c.d*(1-q));
     rim+=.24*c.d*Math.exp(-(((r-1.05)/.22)**2));
@@ -61,6 +71,32 @@ function heightField(finish,pos,eligible,area){
  if(texture==='scales')return (x,y,z)=>{const [f1,f2]=cells(x/S,y/S,z/S*1.4,seed);return -D*(1-smoothstep(0,.18,f2-f1))+.25*D*(1-Math.min(1,f1*1.2));};
  if(texture==='fur')return (x,y,z)=>D*(fbm(x/(.12*S),y/(.12*S),z/(.9*S),seed,3)-1)/2;
  return ()=>0;
+}
+
+// Fracción de rayos que salen de la pieza desde cada vértice.
+// Ocho direcciones inclinadas 55° alrededor de la normal; si salen menos de un tercio, el punto está encerrado
+// (adentro de una lámpara, los rayos que se escapan por la abertura de abajo no alcanzan).
+const tilts=Array.from({length:8},(_,k)=>{const a=k*Math.PI/4,s=Math.sin(55*Math.PI/180);return [Math.cos(a)*s,Math.sin(a)*s,Math.cos(55*Math.PI/180)];});
+function enclosure(bvh,pos,vn,nv,open,weight){
+ const sky=new Float32Array(nv).fill(1),ray=new THREE.Ray(),d=new THREE.Vector3(),t=new THREE.Vector3(),b=new THREE.Vector3(),n=new THREE.Vector3();
+ // Vértices vecinos (celda de 3 mm) que miran hacia el mismo lado ven lo mismo: se calcula una vez por celda y
+ // orientación. Las dos caras de una pared fina caen en la misma celda pero con orientaciones opuestas.
+ const cache=new Map(),cell=3;
+ for(let v=0;v<nv;v++){
+  // También sin choque de frente: desde el techo de una lámpara, el rayo normal sale justo por la abertura.
+  if(!(weight[v]>1e-3))continue;
+  const key=Math.floor(pos[v*3]/cell)+','+Math.floor(pos[v*3+1]/cell)+','+Math.floor(pos[v*3+2]/cell)+','+Math.round(vn[v*3]*2)+','+Math.round(vn[v*3+1]*2)+','+Math.round(vn[v*3+2]*2);
+  const known=cache.get(key);if(known!==undefined){sky[v]=known;continue;}
+  n.set(vn[v*3],vn[v*3+1],vn[v*3+2]);t.set(Math.abs(n.x)<.9?1:0,Math.abs(n.x)<.9?0:1,0).cross(n).normalize();b.crossVectors(n,t);
+  let free=0,blocked=0;
+  for(const [x,y,z] of tilts){
+   d.copy(t).multiplyScalar(x).addScaledVector(b,y).addScaledVector(n,z);ray.origin.set(pos[v*3],pos[v*3+1],pos[v*3+2]).addScaledVector(d,1e-3);ray.direction.copy(d);
+   if(bvh.raycastFirst(ray,THREE.DoubleSide))blocked++;else free++;
+   if(free>=5||blocked>=6)break;// ya se sabe: a la vista (≥ 5/8) o encerrado (≤ 2/8)
+  }
+  sky[v]=free>=5?1:free/tilts.length;cache.set(key,sky[v]);
+ }
+ return sky;
 }
 
 // Desplaza cada vértice sobre su normal. Protege la base, las aristas vivas y el espesor de las paredes.
@@ -92,9 +128,13 @@ function displace(api,manifold,finish,minZ){
  const bvh=new MeshBVH(geometry),ray=new THREE.Ray(),origin=new THREE.Vector3(),dir=new THREE.Vector3(),out=new Float32Array(nv*3);
  const reach=(v,sign)=>{dir.set(vn[v*3]*sign,vn[v*3+1]*sign,vn[v*3+2]*sign);origin.set(pos[v*3],pos[v*3+1],pos[v*3+2]).addScaledVector(dir,1e-3);ray.set(origin,dir);const hit=bvh.raycastFirst(ray,THREE.DoubleSide);return hit?hit.distance:Infinity;};
  // Agujeros, ranuras y el interior de recipientes: mirando hacia afuera hay otra pared cerca. Ahí no se talla
- // nada, así los encastres conservan su medida (el interior de un hueco grande, que no se ve, puede llevar textura).
+ // nada, así los encastres conservan su medida.
  const open=new Float32Array(nv).fill(Infinity);
  for(let v=0;v<nv;v++)if(weight[v]>1e-3){open[v]=reach(v,1);weight[v]*=smoothstep(30,50,open[v]);}
+ // Superficies encerradas (el interior de una luna lámpara, de una maceta honda): aunque la pared de enfrente
+ // esté lejos, casi ningún rayo inclinado sale de la pieza. No se ven, así que no se tallan.
+ const sky=enclosure(bvh,pos,vn,nv,open,weight);
+ for(let v=0;v<nv;v++)if(sky[v]<1)weight[v]*=smoothstep(.3,.6,sky[v]);
  const eligible=[];for(let v=0;v<nv;v++)if(weight[v]>.8)eligible.push(v);
  const field=heightField(finish,pos,eligible,area);
  for(let v=0;v<nv;v++){

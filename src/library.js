@@ -17,6 +17,12 @@ export async function migrateLegacy(){
  return legacy.length;
 }
 export function saveVersion(version){return tx('readwrite',os=>{os.put(version);});}
+// Las versiones automáticas se acumulan rápido (cada pieza de Alfred guarda una); se conservan las más nuevas.
+export async function pruneProject(projectId,keep=40){
+ const old=(await all()).filter(v=>v.projectId===projectId).sort((a,b)=>b.date.localeCompare(a.date)).slice(keep);
+ if(old.length)await tx('readwrite',os=>{for(const v of old)os.delete(v.id);});
+ return old.length;
+}
 export async function listProjects(){
  const versions=(await all()).sort((a,b)=>b.date.localeCompare(a.date)),projects=new Map();
  for(const v of versions){if(!projects.has(v.projectId))projects.set(v.projectId,{projectId:v.projectId,name:v.name,latest:v,versions:[]});projects.get(v.projectId).versions.push(v);}

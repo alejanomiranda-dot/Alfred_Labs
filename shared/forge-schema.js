@@ -14,11 +14,13 @@ export function validateFinish(f){
  if(!f||typeof f!=='object'||!forgeTextures.includes(f.texture)||!inRange(f.smooth,0,1)||!inRange(f.depth,0,3)||!inRange(f.scale,1,60))throw Error('Acabado de Forge inválido.');
  return {texture:f.texture,smooth:f.smooth,depth:f.depth,scale:f.scale};
 }
+// Below these depths a texture is invisible once printed; the model tended to pick 0.1–0.4 mm "to be safe".
+export const visibleDepth={craters:1,rock:.5,wood:.35,scales:.5,fur:.35};
 // The model answers in its own units and ranges; anything out of range is clamped instead of failing the piece.
 export function finishFromModel(raw){
  if(!raw||typeof raw!=='object'||!forgeTextures.includes(raw.texture))return {texture:'none',smooth:0,depth:0,scale:8};
  const clamp=(v,min,max,fallback)=>typeof v==='number'&&Number.isFinite(v)?Math.min(max,Math.max(min,v)):fallback;
- return {texture:raw.texture,smooth:clamp(raw.smooth,0,1,.6),depth:raw.texture==='none'?0:clamp(raw.depth_mm,0,3,.6),scale:clamp(raw.scale_mm,1,60,8)};
+ return {texture:raw.texture,smooth:clamp(raw.smooth,0,1,.6),depth:raw.texture==='none'?0:clamp(raw.depth_mm,visibleDepth[raw.texture],3,Math.max(.6,visibleDepth[raw.texture])),scale:clamp(raw.scale_mm,1,60,8)};
 }
 export function validateForgeArchive(raw){
  if(raw===null||raw===undefined)return null;

@@ -17,7 +17,8 @@ OpenSCAD arma solo la forma grande; la terminación la hace Alfred con Manifold 
 
 - Suavizado: subdivide la malla y redondea las facetas; las aristas vivas de más de 20 a 75° (según el suavizado) se conservan.
 - Textura: desplaza cada punto sobre su normal. Los cráteres son cuencos con borde levantado; roca, madera y pelaje se tallan hacia adentro.
-- Protecciones: la base plana y su altura, las aristas vivas, los agujeros, ranuras e interiores de recipientes (si hay otra pared enfrente a menos de 30 a 50 mm no se talla, y en superficies interiores nunca se agrega material), y una pared mínima de 1,2 mm medida con rayos.
+- Protecciones: la base plana y su altura, las aristas vivas, los agujeros, ranuras e interiores de recipientes (si hay otra pared enfrente a menos de 30 a 50 mm no se talla, y en superficies interiores nunca se agrega material), las superficies encerradas como el interior de una luna lámpara (desde ahí casi ningún rayo inclinado sale de la pieza) y una pared mínima de 1,2 mm medida con rayos.
+- Profundidad visible: lo que elige la IA no baja de 1 mm en cráteres, 0,5 mm en roca y escamas y 0,35 mm en madera y pelaje; desde el panel se puede bajar más. La crítica visual sabe que la textura es del acabado y puede pedir ajustarla.
 - No se reescala la pieza: las medidas cambian décimas de milímetro y los encastres conservan su tamaño.
 - Hasta unos 190.000 triángulos y 1 a 3 s de cálculo por cambio; el resultado se reutiliza al redibujar.
 - Límite: suavizar redondea también puntas finas (por ejemplo, la punta de un cono). Para piezas técnicas o con caras planas, el suavizado debe ser bajo o nulo.

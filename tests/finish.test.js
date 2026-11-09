@@ -51,7 +51,18 @@ test('una textura profunda en una pared fina se limita para no bajar del espesor
  const thin=moon(45,42.6),before=thinnestWall(thin);assert.ok(before>2.2&&before<2.5);
  const out=applyFinish(api,thin,{texture:'craters',smooth:.8,depth:3,scale:10,seed:3});
  const wall=thinnestWall(out);assert.ok(wall>=finishMinWall-.05,'pared de '+wall.toFixed(2)+' mm');
- assert.ok(out.volume()<thin.volume(),'los cráteres sí se tallan donde hay material de sobra');
+ assert.ok(out.volume()<applyFinish(api,thin,{texture:'none',smooth:.8,depth:0,scale:10}).volume(),'los cráteres sí se tallan donde hay material de sobra');
+});
+
+test('el interior de una pieza hueca queda liso aunque la pared de enfrente esté lejos',()=>{
+ // Luna de 120 mm como la del pedido real: la cavidad mide 114 mm, más que el alcance de la protección por cercanía.
+ const big=M.sphere(60,40).translate([0,0,55]).subtract(M.sphere(57,40).translate([0,0,55])).subtract(M.cylinder(30,20,20,40,false).translate([0,0,-5])).trimByPlane([0,0,1],0);
+ const inner=s=>{const m=meshOf(s);let lo=Infinity,hi=0;for(let v=0;v<m.positions.length;v+=3){const r=Math.hypot(m.positions[v],m.positions[v+1],m.positions[v+2]-55);if(r<58.5&&m.positions[v+2]>25){lo=Math.min(lo,r);hi=Math.max(hi,r);}}return [lo,hi];};
+ const plain=inner(applyFinish(api,big,{texture:'none',smooth:.9,depth:0,scale:8}));
+ const started=performance.now(),out=applyFinish(api,big,{texture:'craters',smooth:.9,depth:2,scale:16,seed:1}),textured=inner(out);
+ assert.ok(Math.abs(textured[0]-plain[0])<.05&&Math.abs(textured[1]-plain[1])<.05,'interior '+textured.map(v=>v.toFixed(2))+' en vez de '+plain.map(v=>v.toFixed(2)));
+ assert.ok(out.volume()<applyFinish(api,big,{texture:'none',smooth:.9,depth:0,scale:8}).volume(),'el exterior sí lleva cráteres');
+ assert.ok(performance.now()-started<6000,'tardó '+Math.round(performance.now()-started)+' ms');
 });
 
 test('el acabado es determinístico y sin acabado no cambia nada',()=>{
@@ -85,6 +96,9 @@ test('el modelo elige el acabado; valores fuera de rango se acotan y el acabado 
  assert.deepEqual(finishFromModel({texture:'craters',smooth:4,depth_mm:9,scale_mm:.1}),{texture:'craters',smooth:1,depth:3,scale:1});
  assert.deepEqual(finishFromModel({texture:'lava'}),{texture:'none',smooth:0,depth:0,scale:8});
  assert.equal(finishFromModel({texture:'none',smooth:.8,depth_mm:2,scale_mm:5}).depth,0);
+ // Lo que eligió la IA en la prueba real (0,44 mm de cráteres, 0,1 mm de escamas) no se vería impreso.
+ assert.equal(finishFromModel({texture:'craters',smooth:.95,depth_mm:.44,scale_mm:6}).depth,1);
+ assert.equal(finishFromModel({texture:'scales',smooth:.85,depth_mm:.1,scale_mm:3.5}).depth,.5);
  let sent;
  const fetcher=async(url,options)=>{sent=JSON.parse(options.body);return {ok:true,json:async()=>({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({scad:'// luna hueca de prueba\nsphere(45, $fn=32);\n',finish:{texture:'craters',smooth:.9,depth_mm:1.4,scale_mm:10},description:'Luna',assumptions:[],caveats:[]})}]}]})};};
  const body=validateForgeRequest({action:'generate',prompt:'más cráteres',previous:'// luna hueca de prueba\nsphere(45, $fn=32);\n',previousFinish:{texture:'craters',smooth:.9,depth:1,scale:12}});
