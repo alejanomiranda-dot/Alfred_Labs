@@ -46,3 +46,13 @@ test('el origen de la pieza actual viaja al modelo y se valida',async()=>{
  assert.equal(sent.origenPiezaActual,'forge');assert.equal(r.route,'forge');
  await assert.rejects(proposeDesign({prompt:'x',currentEngine:'otro'},'test-key',()=>{throw Error('no');}),/Origen/);
 });
+test('una figura nunca promete colores: el mensaje se corrige si los menciona',async()=>{
+ const reply=data=>async()=>({ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify({forgePrompt:'',designSource:'current',generation:null,imageReading:'',imageDifferences:'',proportionCheck:'',expectedSize:null,...data})}]}]})});
+ let r=await proposeDesign({prompt:'Busto multicolor'},'test-key',reply({route:'forge',message:'Armo un busto con pelo y barba separados en colores.',canApply:false,params:defaults}));
+ assert.match(r.message,/un solo color de filamento/);
+ r=await proposeDesign({prompt:'Un gato'},'test-key',reply({route:'forge',message:'Armo un gato de 80 mm, de un solo color.',canApply:false,params:defaults}));
+ assert.equal(r.message,'Armo un gato de 80 mm, de un solo color.');
+ // El retrato a colores desde una foto viaja como relieve que se redibuja.
+ r=await proposeDesign({prompt:'Busto con mis rasgos y a color'},'test-key',reply({route:'relief',message:'Armo un retrato en relieve a colores.',canApply:false,params:defaults,generation:{mode:'relief',subject:'Retrato',width:80,height:100,baseThickness:2,depth:2,palette:['#ffffff','#e0b49a','#2a2a2a'],redraw:true}}));
+ assert.equal(r.route,'relief');assert.equal(r.generation.redraw,true);assert.deepEqual(r.generation.palette,['#ffffff','#e0b49a','#2a2a2a']);
+});

@@ -112,3 +112,7 @@ test('paleta inválida o de un solo color no rompe el relieve monocromo',()=>{
  assert.throws(()=>validateGeneration({...spec,palette:['rojo','#000000']}));
  assert.throws(()=>validateGeneration({...spec,palette:['#000000','#111111','#222222','#333333','#444444']}));
 });
+test('colores casi iguales de la paleta se unen para no gastar un carrete',()=>{
+ assert.deepEqual(validateGeneration({...spec,palette:['#ffffff','#d6a080','#1a1715','#111111']}).palette,['#ffffff','#d6a080','#1a1715']);
+ assert.deepEqual(validateGeneration({...spec,palette:['#ffffff','#d6a080','#a86a4a','#111111']}).palette,['#ffffff','#d6a080','#a86a4a','#111111']);
+});
