@@ -1,6 +1,8 @@
 // «Tu pieza»: solo los controles que tienen sentido para el tipo de pieza actual.
 import {keychainLogoPreview,keychainUrl} from '../keychain.js';
 import {renderOpEditor} from '../op-editor.js';
+import {finishTextures,finishLabels,defaultFinish} from '../finish.js';
+import {finishOf,withFinish} from '../forge-project.js';
 
 const el=(tag,props={},...children)=>{const node=Object.assign(document.createElement(tag),props);node.append(...children.filter(c=>c!==null&&c!==undefined&&c!==false));return node;};
 const fmt=v=>String(Math.round(v*10)/10).replace('.',',');
@@ -96,6 +98,32 @@ function reliefControls(p,ctx){
  )];
 }
 
+// Acabado orgánico: se cambia sobre la misma pieza, sin volver a generarla.
+function finishControls(p,ctx){
+ const box=el('div',{});let program=p.freeDesign;
+ const render=(error='')=>{
+  const f=finishOf(program),busy=el('p',{className:'note',hidden:true,textContent:'Aplicando el acabado…'});
+  const apply=changes=>{
+   const next=withFinish(program,{...f,...changes});busy.hidden=false;
+   // El acabado tarda un momento: primero se muestra el aviso.
+   setTimeout(()=>{const problem=ctx.editProgram(next);if(!problem)program=next;render(problem||'');},30);
+  };
+  const select=el('select',{},...finishTextures.map(t=>el('option',{value:t,textContent:finishLabels[t],selected:t===f.texture})));
+  select.onchange=()=>{const d=defaultFinish(select.value);apply({texture:select.value,depth:d.depth,scale:d.scale,smooth:f.smooth||(select.value==='none'?0:.7)});};
+  const textured=f.texture!=='none';
+  box.replaceChildren(...[
+   el('label',{className:'control'},el('span',{},'Textura'),select),
+   numberControl({label:'Suavizado',value:Math.round(f.smooth*100),min:0,max:100,step:5,unit:'%',onCommit:(v,{live})=>{if(!live)apply({smooth:v/100});}}),
+   textured?numberControl({label:'Profundidad',value:f.depth,min:.1,max:3,step:.1,onCommit:(v,{live})=>{if(!live)apply({depth:v});}}):null,
+   textured?numberControl({label:'Tamaño de cada motivo',value:f.scale,min:1,max:60,step:1,onCommit:(v,{live})=>{if(!live)apply({scale:v});}}):null,
+   busy,
+   error?el('p',{className:'op-error',textContent:error}):null,
+   el('p',{className:'note',textContent:'Redondea las facetas y talla la textura sin tocar la base, las aberturas ni las medidas. No vuelve a generar la pieza.'})
+  ].filter(Boolean));
+ };
+ render();
+ return group('Acabado',box);
+}
 function forgeControls(p,ctx){
  const archive=p.forge,selected=archive.revisions.find(r=>r.id===archive.selected);
  const select=el('select',{});for(const [i,r] of archive.revisions.entries()){const o=el('option',{value:r.id,textContent:(i+1)+'. '+r.prompt.slice(0,48)});o.selected=r.id===archive.selected;select.append(o);}
@@ -105,6 +133,7 @@ function forgeControls(p,ctx){
  const summary=(selected?.description||'Pieza generada por Alfred.').split(/(?<=\.)\s/)[0];
  return [
   group('Pieza generada',el('p',{className:'note',textContent:summary}),el('p',{className:'note',textContent:'Para cambiarla, pedíselo a Alfred: «más alta», «sin cola», «orejas más grandes».'})),
+  p.kind==='free'&&p.freeDesign?finishControls(p,ctx):null,
   group(null,el('details',{},el('summary',{textContent:'Avanzado · versiones, notas y fuente'}),el('label',{},'Versión',select),el('div',{className:'library-actions'},rebuild,source),notes.length?el('ul',{className:'note'},...notes.map(t=>el('li',{textContent:t}))):null,el('pre',{className:'forge-code',textContent:selected?.scad||''})))
  ];
 }
@@ -129,7 +158,7 @@ export function renderPanel(host,ctx){
  else if(p.sourceInfo)nodes=reliefControls(p,ctx);
  else if(p.forge)nodes=forgeControls(p,ctx);
  else nodes=freeControls(p,ctx);
- host.append(...nodes);
+ host.append(...nodes.filter(Boolean));
 }
 
 export function renderStatus(host,{review,model,settings,money,durationText,costOf,heatOn,canOrient,onHeat,onOrient,onPrint}){

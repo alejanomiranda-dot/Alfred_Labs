@@ -1,6 +1,7 @@
 // Declarative CAD. Data only: no eval, scripts, imports, filesystem or network.
 import {shapeSection,fontNames,iconNames,missingGlyph,fontOf} from './shapes.js';
-export const nodeTypes=['imported','box','open_box','cylinder','open_cylinder','revolve','sphere','ellipsoid','capsule','torus','extrude','text','engrave_text','emboss_text','union','subtract','intersect'];
+import {applyFinish,finishTextures} from './finish.js';
+export const nodeTypes=['imported','box','open_box','cylinder','open_cylinder','revolve','sphere','ellipsoid','capsule','torus','extrude','text','engrave_text','emboss_text','union','subtract','intersect','finish'];
 export const faces=['top','bottom','front','back','left','right','around'];
 const faceTypes=['engrave_text','emboss_text'];
 const booleanTypes=['union','subtract','intersect'];
@@ -38,10 +39,16 @@ export function validateProgram(program){
   if(n.icon!==undefined&&n.icon!==''&&!iconNames.includes(n.icon))throw Error('Ícono no disponible.');
   if(['text',...faceTypes].includes(n.type)){number(n.fontSize,1,80,'Tamaño del texto');if(!n.icon){if(typeof n.text!=='string'||!n.text.trim()||n.text.length>60)throw Error('Texto inválido.');const c=missingGlyph(n.text,n.font);if(c)throw Error('Carácter no disponible en esa tipografía: '+c);}}
   if(booleanTypes.includes(n.type)){if(!Array.isArray(n.inputs)||n.inputs.length<2||n.inputs.length>30||n.inputs.some(v=>!Number.isInteger(v)||v<0||v>=i))throw Error('Las operaciones deben referirse a volúmenes anteriores.');}
+  if(n.type==='finish'){
+   if(!finishTextures.includes(n.texture))throw Error('Acabado no disponible.');
+   number(n.smooth,0,1,'Suavizado');number(n.depth,0,3,'Profundidad de la textura');number(n.scale,1,60,'Tamaño de la textura');
+   if(n.seed!==undefined&&(!Number.isInteger(n.seed)||n.seed<0||n.seed>1e6))throw Error('Variante de textura inválida.');
+   if(!Array.isArray(n.inputs)||n.inputs.length!==1||!Number.isInteger(n.inputs[0])||n.inputs[0]<0||n.inputs[0]>=i)throw Error('El acabado debe aplicarse sobre una pieza anterior.');
+  }
  });
  if(vertices>2000)throw Error('El contorno tiene demasiados puntos.');
  // Only the last operation is the piece: anything not consumed by a later boolean would be silently lost.
- const used=new Set(program.nodes.flatMap(n=>[...booleanTypes,...faceTypes].includes(n.type)?n.inputs:[]));
+ const used=new Set(program.nodes.flatMap(n=>[...booleanTypes,...faceTypes,'finish'].includes(n.type)?n.inputs:[]));
  const loose=program.nodes.slice(0,-1).map((_,i)=>i).filter(i=>!used.has(i));
  if(loose.length)throw Error('Operaciones sueltas que no forman parte de la pieza final: '+loose.map(i=>i+1).join(', ')+'. Combinalas con unión, sustracción o intersección.');
  return program;
@@ -144,6 +151,16 @@ export function describeImport(api,mesh){
   return {ocupa:{x:[round(b.min[0]),round(b.max[0])],y:[round(b.min[1]),round(b.max[1])],z:[round(b.min[2]),round(b.max[2])]},cortes:profile};
  }finally{for(const x of owned.reverse())x.delete();}
 }
+// The organic finish takes a second or two; the same piece with the same steps is reused on every redraw.
+const finishCache=new WeakMap();
+function finishedSolid(api,own,input,n,importedMesh,steps){
+ const key=JSON.stringify(steps),cache=importedMesh&&typeof importedMesh==='object'?finishCache.get(importedMesh)||new Map():null;
+ const hit=cache?.get(key);
+ if(hit)return own(new api.Manifold(new api.Mesh({numProp:3,vertProperties:hit.vertices,triVerts:hit.triangles})));
+ const out=applyFinish(api,input,n);if(!out)return input;own(out);
+ if(cache){const raw=out.getMesh();cache.set(key,{vertices:Float32Array.from(raw.vertProperties.filter((_,k)=>k%raw.numProp<3)),triangles:new Uint32Array(raw.triVerts)});if(cache.size>4)cache.delete(cache.keys().next().value);finishCache.set(importedMesh,cache);}
+ return out;
+}
 export function buildSolidProgram(api,program,params){
  validateProgram(withImport(program,params));const notes=[],owned=[],own=x=>(owned.push(x),x),solids=[],regions=[],contains=[];const {Manifold:M,CrossSection:C}=api;
  try{
@@ -185,6 +202,7 @@ export function buildSolidProgram(api,program,params){
    if(n.type==='union')solid=own(M.union(n.inputs.map(i=>solids[i])));
    if(n.type==='subtract'){solid=solids[n.inputs[0]];for(const i of n.inputs.slice(1))solid=own(solid.subtract(solids[i]));}
    if(n.type==='intersect'){solid=solids[n.inputs[0]];for(const i of n.inputs.slice(1))solid=own(solid.intersect(solids[i]));}
+   if(n.type==='finish')solid=finishedSolid(api,own,solids[n.inputs[0]],n,params?.importedMesh,program.nodes.slice(0,i+1));
    if(region){regions.push({color:n.color.toLowerCase(),solid:region});contains[i].add(regions.length-1);}
    // Un relieve en colores reclama, para cada color, lo que sobresale de la placa dentro de su contorno.
    if(n.type==='imported'&&params?.importedColors)for(const layer of params.importedColors.layers){const zone=own(own(own(new C(layer.polygons,'EvenOdd')).extrude(1000)).translate([0,0,params.importedColors.zFrom]));regions.push({color:layer.color,solid:zone});contains[i].add(regions.length-1);}

@@ -15,7 +15,8 @@ import {readKeychainLogo,keychainUrl,isTwoSidedKeychain} from '../keychain.js';
 import {readQrImage} from '../qr-image.js';
 import {reliefFromImage,generatedParams} from '../relief.js';
 import {validateGeneration} from '../generation-spec.js';
-import {revisionFromResult,prepareForgeProposal,appendForgeRevision} from '../forge-project.js';
+import {revisionFromResult,prepareForgeProposal,appendForgeRevision,finishOf} from '../forge-project.js';
+import {hasFinish} from '../finish.js';
 import {openPhotoMeasure} from '../photo-measure.js';
 import {openSparePart} from '../spare-part.js';
 import {setupTheme} from './theme.js';
@@ -68,7 +69,7 @@ function refresh({keepView=false,panel=true,built=null}={}){
  S.model=null;
  if(built){S.model=built;S.params=built.params;}
  else if(hasPiece()){try{S.model=build(S.params);S.params=S.model.params;}catch(e){toast(e.message);}}
- viewer.draw(S.model,S.model?partsOf(S.model,S.params):[],{keepView,smooth:!!S.params.sourceInfo});
+ viewer.draw(S.model,S.model?partsOf(S.model,S.params):[],{keepView,smooth:!!S.params.sourceInfo||(S.params.kind==='free'&&hasFinish(finishOf(S.params.freeDesign)))});
  $('dimensions').textContent=S.model?sizeText(S.model.dimensions):'';
  const flat=S.params.kind!=='free'||!!S.params.sourceInfo;$('viewFront').textContent=flat?'Frente':'Arriba';$('viewBack').textContent=flat?'Dorso':'Abajo';
  $('project').value=S.params.project||'';$('project').size=Math.max(8,Math.min(36,($('project').value.length||8)+1));
@@ -300,9 +301,11 @@ function describeLoose(pieces){
 }
 // Último recurso: detalles sueltos diminutos (menos del 2 % de la superficie) se quitan del STL.
 function dropTinyParts(api,base,result,archive,checked){
- const pieces=meshParts(checked.built.combined),total=pieces.reduce((a,p)=>a+p.area,0);
+ // Sobre la malla compilada, no la terminada: el acabado se vuelve a aplicar al armar la pieza.
+ const raw=checked.candidate.importedMesh,mesh={numProp:3,positions:Float32Array.from(raw.vertices),triangles:Uint32Array.from(raw.triangles)};
+ const pieces=meshParts(mesh),total=pieces.reduce((a,p)=>a+p.area,0);
  if(pieces.length<2||pieces.slice(1).some(p=>p.area>total*.02))return null;
- const bytes=stlBytes(keepParts(checked.built.combined,[pieces[0]]));let bin='';for(let i=0;i<bytes.length;i+=32768)bin+=String.fromCharCode(...bytes.subarray(i,i+32768));
+ const bytes=stlBytes(keepParts(mesh,[pieces[0]]));let bin='';for(let i=0;i<bytes.length;i+=32768)bin+=String.fromCharCode(...bytes.subarray(i,i+32768));
  return {checked:prepareForgeProposal(api,base,{...result,files:{stl:btoa(bin)}},archive),removed:pieces.length-1};
 }
 async function forgeFlow(action,prompt,epoch,scad,expected=null,{polish=true,note='Pieza generada',title=prompt}={}){
@@ -310,7 +313,7 @@ async function forgeFlow(action,prompt,epoch,scad,expected=null,{polish=true,not
  if(!status[action]){addMessage('assistant',action==='generate'?'Esta pieza necesita el generador avanzado, que no está disponible en este momento. Probá describirla con medidas y formas simples.':'El generador avanzado no está disponible en este momento.');return;}
  const archive=S.params.forge,previous=archive?.revisions.find(r=>r.id===archive.selected);
  setBusy(true,action==='generate'?'Modelando la pieza con el generador avanzado… puede tardar unos minutos.':'Preparando la pieza…');
- const body=action==='example'?{action}:action==='compile'?{action,scad}:{action,prompt,history:recentHistory().slice(-8).map(m=>({...m,content:m.content.slice(0,2000)})),...(previous?{previous:previous.scad}:{})};
+ const body=action==='example'?{action}:action==='compile'?{action,scad}:{action,prompt,history:recentHistory().slice(-8).map(m=>({...m,content:m.content.slice(0,2000)})),...(previous?{previous:previous.scad,previousFinish:finishOf(S.params.freeDesign)}:{})};
  let result=await post('/api/forge',body,345000);check(epoch);
  let revision=action==='compile'?{...previous}:revisionFromResult(result,action==='example'?'Árbol VERO y ALE · ejemplo':prompt);
  let nextArchive=action==='compile'?archive:appendForgeRevision(archive,revision);
