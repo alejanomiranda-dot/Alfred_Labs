@@ -1,5 +1,5 @@
 import QRCode from 'qrcode';
-import {readKeychainLogo,keychainUrl,keychainLogoPreview} from './keychain.js';
+import {readKeychainLogo,keychainUrl,keychainLogoPreview,keychainColors,keychainLogoNotes} from './keychain.js';
 
 export const isTwoSidedKeychain=prompt=>/llaver|chapita|tarjeta|frente|dorso|atr[aá]s/i.test(prompt)&&/\bqr\b|c[oó]digo/i.test(prompt)&&/logo|marca/i.test(prompt);
 
@@ -13,7 +13,7 @@ export function createKeychainDesigner({onCreate,onError}){
   try{
    if(source instanceof File&&(!['image/png','image/jpeg'].includes(source.type)||source.size>10e6))throw Error('Elegí un PNG o JPG de hasta 10 MB.');
    const result=await readKeychainLogo(source,name);if(task!==serial)return;logo=result.config;$('keychainFront').src=result.preview;$('keychainFront').hidden=false;$('keychainFrontEmpty').hidden=true;$('keychainLogoName').textContent=name;
-   $('keychainPalette').textContent='Logo adaptado a '+logo.layers.length+' colores sólidos + base clara. Conserva los contornos del archivo; los degradados se simplifican.';
+   $('keychainPalette').textContent='Logo adaptado a '+keychainColors(logo).length+' colores sólidos + base clara. Conserva los contornos del archivo; los degradados se simplifican. '+keychainLogoNotes(logo);
    $('keychainStatus').textContent='Logo listo. Revisá el enlace del QR y creá la vista previa.';
   }catch(error){if(task===serial){$('keychainStatus').textContent=error.message;$('keychainFront').hidden=true;$('keychainFrontEmpty').hidden=false;}}
   finally{if(task===serial){busy=false;available();}}

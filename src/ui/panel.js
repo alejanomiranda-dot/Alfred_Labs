@@ -1,5 +1,5 @@
 // «Tu pieza»: solo los controles que tienen sentido para el tipo de pieza actual.
-import {keychainLogoPreview,keychainUrl} from '../keychain.js';
+import {keychainLogoPreview,keychainUrl,colorName,hasLogoText} from '../keychain.js';
 import {renderOpEditor} from '../op-editor.js';
 import {finishTextures,finishLabels,defaultFinish} from '../finish.js';
 import {finishOf,withFinish} from '../forge-project.js';
@@ -36,9 +36,10 @@ function choiceControl({label,value,options,onCommit}){
 }
 function colorControl(items){
  const row=el('div',{className:'swatches'});
- for(const {label,value,onCommit,readOnly} of items){
+ for(const {label,value,onCommit,readOnly,onRelease} of items){
   const sw=el('label',{className:'swatch',title:label});sw.style.background=value;
-  if(!readOnly){const input=el('input',{type:'color',value});input.setAttribute('aria-label',label);input.addEventListener('input',()=>{sw.style.background=input.value;onCommit(input.value);});sw.append(input);}
+  // onRelease: rebuilds that are heavy (the keychain) wait until the picker closes instead of following every drag.
+  if(!readOnly){const input=el('input',{type:'color',value});input.setAttribute('aria-label',label);input.addEventListener('input',()=>{sw.style.background=input.value;onCommit?.(input.value);});if(onRelease)input.addEventListener('change',()=>onRelease(input.value));sw.append(input);}
   row.append(sw);
  }
  return row;
@@ -72,12 +73,15 @@ function templateControls(p,ctx){
 function keychainControls(p,ctx){
  const preview=el('img',{className:'logo-preview',alt:'Logo del frente',src:keychainLogoPreview(p.keychain)});
  const change=el('button',{type:'button',className:'secondary full',textContent:'Cambiar logo'});change.onclick=()=>ctx.replaceLogo();
- const colors=(ctx.model?.parts||[]).map(part=>({label:'Color del llavero',value:part.color,readOnly:true}));
+ // Each part of the 3MF has its swatch; logo parts are recolored in place, the QR follows the darkest color.
+ const colors=(ctx.model?.parts||[]).map((part,i)=>!i?{label:'Base · '+colorName(part.color)+' (tiene que ser clara)',value:part.color,onRelease:v=>ctx.update({baseColor:v},{rerender:true})}
+  :part.region==='qr'?{label:'QR del dorso · '+colorName(part.color)+' (toma el color más oscuro del logo)',value:part.color,readOnly:true}
+  :{label:(part.region==='texto'?'Texto del logo':'Marca')+' · '+colorName(part.color),value:part.color,onRelease:v=>ctx.recolorLogo(part.region||'marca',part.layerColor||part.color,v)});
  return [
   group('Frente',preview,change),
   group('Dorso · QR',textControl({label:'¿A dónde lleva el QR?',value:p.qrText,maxLength:180,validate:v=>keychainUrl(/^https?:\/\//i.test(v.trim())?v:'https://'+v.trim()),onCommit:v=>ctx.update({qrText:v})})),
   group('Tamaño',numberControl({label:'Ancho',value:p.width,min:45,max:100,onCommit:(v,o)=>ctx.update({width:v},o)}),numberControl({label:'Alto',value:p.height,min:50,max:100,onCommit:(v,o)=>ctx.update({height:v},o)})),
-  colors.length?group('Colores del archivo',colorControl(colors),el('p',{className:'note',textContent:'Base clara y hasta 3 colores tomados del logo. Asignalos a tus filamentos en Bambu Studio.'})):null
+  colors.length?group('Colores del archivo',colorControl(colors),el('p',{className:'note',textContent:'Tocá un color para cambiarlo. Base clara y hasta 3 colores del logo, para los 4 filamentos del AMS. '+(hasLogoText(p.keychain)?'El texto del logo es una parte aparte: en Bambu Studio le podés asignar cualquier filamento.':'En Bambu Studio asignale un filamento a cada parte.')})):null
  ].filter(Boolean);
 }
 

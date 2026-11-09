@@ -24,7 +24,9 @@ try{
   const solid=new api.Manifold(new api.Mesh({numProp:3,vertProperties:positions,triVerts:triangles}));
   assert.equal(solid.status(),'NoError','Cada color debe ser un sólido cerrado');solids.push(solid);
  }
- assert.ok(solids.length>=2&&solids.length<=4);
+ // Parts can be more than colors (the logo text is its own part); filaments are what the AMS limits.
+ const filaments=new Set([...xml.matchAll(/displaycolor="(#[A-Fa-f\d]{6})FF"/g)].map(m=>m[1].toUpperCase()));
+ assert.ok(solids.length>=2);assert.ok(filaments.size>=2&&filaments.size<=4,'Hasta 4 filamentos para el AMS');
  const union=api.Manifold.union(solids);
  try{
   assert.equal(union.status(),'NoError');assert.ok(Math.abs(solids.reduce((sum,s)=>sum+s.volume(),0)-union.volume())<.01,'Colores sin solapamiento');
@@ -33,7 +35,7 @@ try{
   const bbox=union.boundingBox(),dimensions=bbox.max.map((v,i)=>Math.round((v-bbox.min[i])*100)/100);
   assert.deepEqual(dimensions,[params.width,params.height,Math.round((params.thickness+params.relief)*100)/100]);
   const review=reviewPrint(mesh,union.volume());assert.equal(review.issues.filter(i=>i.kind!=='ok').length,0,'La revisión geométrica no debe detectar problemas');
-  const report={file:path.resolve(file),qrDecodedFromExportedTriangles:decoded,dimensionsMm:dimensions,colors:solids.length,watertight:true,overlapMm3:solids.reduce((sum,s)=>sum+s.volume(),0)-union.volume(),physicalPieces:1,triangles:mesh.triangles.length/3,volumeMm3:union.volume(),logo:params.keychain.name,reviewIssues:review.issues,physicalPrintVerified:false,slicerVerified:false};
+  const report={file:path.resolve(file),qrDecodedFromExportedTriangles:decoded,dimensionsMm:dimensions,colors:filaments.size,parts:solids.length,watertight:true,overlapMm3:solids.reduce((sum,s)=>sum+s.volume(),0)-union.volume(),physicalPieces:1,triangles:mesh.triangles.length/3,volumeMm3:union.volume(),logo:params.keychain.name,reviewIssues:review.issues,physicalPrintVerified:false,slicerVerified:false};
   if(reportFile)await fs.writeFile(reportFile,JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
  }finally{union.delete();}
 }finally{solids.forEach(s=>s.delete());}
