@@ -31,7 +31,7 @@ Abrir `http://127.0.0.1:5173/` (o hacer doble clic en **Iniciar taller.cmd**). `
 ## Diseño
 
 - Operaciones: bloques, cajas abiertas, cilindros y conos, recipientes, piezas por perfil (torno), esferas, elipsoides, cápsulas, anillos, contornos, texto, uniones, huecos e intersecciones. Un STL o 3MF importado es la primera operación.
-- Texto e íconos grabados, en relieve, incrustados o alrededor de superficies curvas. Las plantillas usan Helvetiker Bold y pasan a Gentilis si el texto lleva acentos o Ñ, para no alterar el nombre.
+- Texto e íconos grabados, en relieve, incrustados o alrededor de superficies curvas. Las plantillas usan Helvetiker Bold y pasan a Gentilis si el texto lleva acentos o Ñ, para no alterar el nombre. El modelado por medidas conserva también esos caracteres y avisa si necesita usar Gentilis.
 - **Multicolor**: hasta 4 colores (AMS). El 3MF lleva una parte por color.
 - «Medir» sobre una foto adjunta calcula medidas reales con una referencia de escala. La guía para repuestos indica qué medir con calibre, el encastre y la holgura.
 
@@ -46,7 +46,7 @@ Abrir `http://127.0.0.1:5173/` (o hacer doble clic en **Iniciar taller.cmd**). `
 
 ## Asistente y publicación
 
-OpenAI Responses API con salida estructurada (`gpt-4.1` por defecto; `OPENAI_MODEL` lo cambia). `store:false`. Se envían el pedido, la conversación reciente, el diseño (sin mallas importadas ni contornos de logo), el estilo y la imagen adjunta.
+OpenAI Responses API con salida estructurada (`gpt-5.5` por defecto; `OPENAI_MODEL` lo cambia). Forge usa `gpt-6.1-sol` (`OPENAI_FORGE_MODEL`) y revisa visualmente tres vistas antes de dar por terminada una figura. `store:false`. Se envían el pedido, la conversación reciente, el diseño (sin mallas importadas ni contornos de logo), el estilo y la imagen adjunta.
 
 La generación visual usa Images API (`gpt-image-1.5`, configurable con `OPENAI_IMAGE_MODEL`) con la misma clave del servidor. Requiere acceso a imágenes y créditos en la cuenta. El mapa de alturas se convierte en una malla cerrada en el navegador, con fondo plano y base mínima de 1,2 mm. La respuesta de imágenes se limita a 4 MB de base64 y el tiempo de la función a 180 segundos. Si la generación no está disponible, se puede convertir una imagen adjunta directamente. El proyecto editable conserva la malla y las medidas del relieve, no la imagen original.
 
@@ -54,7 +54,11 @@ La generación visual usa Images API (`gpt-image-1.5`, configurable con `OPENAI_
 
 `node scripts/evaluate-creative.mjs` prueba seis pedidos creativos reales. `--image` agrega una generación real de una galaxia y guarda su mapa en `muestras/`. Estas pruebas consumen API; las pruebas geométricas de `npm test` usan datos sintéticos sin red. [Alcance y validación del motor creativo](CREATIVE-ENGINE.md).
 
-Vercel: proyecto `alejano910/taller-3d`, conectado a `alejanomiranda-dot/taller-3D` (rama `main`; cada push publica). La aplicación no solicita código de acceso. Conserva validación de origen y límites de pedidos por instancia. `OPENAI_API_KEY` permanece solo en el servidor, nunca con prefijo `VITE_`. La configuración local se lee de `.env.local` (no se sube).
+Vercel: proyecto `alejano910/alfred_labs`, conectado a `alejanomiranda-dot/Alfred_Labs` (rama `main`; cada push publica). La aplicación no solicita código de acceso. Conserva validación de origen y límites de pedidos por instancia. `OPENAI_API_KEY` permanece solo en el servidor, nunca con prefijo `VITE_`. La configuración local se lee de `.env.local` (no se sube).
+
+La imagen aislada de Forge usa OpenSCAD 2026.11.06 con Manifold. `node --env-file=.env.local scripts/provision-forge-snapshot.mjs` prepara una imagen, verifica SHA-256 contra la publicación oficial y compila la muestra con el worker real sin red antes de guardarla. `FORGE_BASE_SNAPSHOT_ID` permite reutilizar una imagen existente de herramientas para renovarla sin reinstalar Ubuntu; luego se actualiza `server/forge-sandbox-config.js`. La retención es de 30 días desde el último uso. Forge en producción requiere `FORGE_REMOTE_ENABLED=true`; las vistas previas lo habilitan automáticamente.
+
+Para probar una vista previa protegida con la credencial OIDC local: `LIVE_URL` debe apuntar a su URL y se ejecuta `node --env-file=.env.local scripts/verify-live-browser.mjs`. Esa prueba consume API, comprueba caja y figura, y agrega relieve con `--image`. La credencial sólo viaja al origen del despliegue.
 
 ## Privacidad
 

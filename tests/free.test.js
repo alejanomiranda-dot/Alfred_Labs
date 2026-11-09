@@ -8,6 +8,16 @@ import {threeMfBytes,stlBytes} from '../src/export.js';
 const api=await Module();api.setup();
 const node=(type,extra={})=>({type,position:[0,0,0],rotation:[0,0,0],...extra});
 const free=nodes=>buildModel(api,{...defaults,kind:'free',freeDesign:{version:1,nodes}});
+test('CAD conserva Ñ y acentos en la geometría y avisa si necesita otra tipografía',()=>{
+ const text=(name,font)=>free([node('text',{text:name,font,fontSize:8,height:1})]);
+ const accented=text('NIÑO SOFÍA','helvetiker'),reference=text('NIÑO SOFÍA','gentilis'),plain=text('NINO SOFIA','gentilis');
+ assert.deepEqual(accented.combined.positions,reference.combined.positions);
+ assert.notEqual(accented.volume,plain.volume);closed(accented.combined);
+ assert.ok(accented.warnings.some(w=>w.includes('Gentilis')));
+ assert.equal(accented.params.freeDesign.nodes[0].text,'NIÑO SOFÍA');
+ assert.equal(text('NIN\u0303O SOFI\u0301A','optimer').volume,reference.volume);
+ assert.throws(()=>text('🙃','helvetiker'),/Carácter no disponible/);
+});
 function closed(m){if(m.mesh)m=m.mesh;const edges=new Map();for(let i=0;i<m.triangles.length;i+=3)for(let j=0;j<3;j++){const a=m.triangles[i+j],b=m.triangles[i+(j+1)%3],key=[Math.min(a,b),Math.max(a,b)].join(':');const e=edges.get(key)||[0,0];e[0]++;e[1]+=a<b?1:-1;edges.set(key,e);}for(const e of edges.values())assert.deepEqual(e,[2,0]);}
 test('caja abierta tiene medidas y volumen de paredes reales; 3MF sin partes vacías',()=>{
  const m=free([node('box',{size:[80,50,30]}),node('box',{size:[76,46,30],position:[0,0,2]}),node('subtract',{inputs:[0,1]})]);

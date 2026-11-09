@@ -1,5 +1,5 @@
 // Declarative CAD. Data only: no eval, scripts, imports, filesystem or network.
-import {shapeSection,fontNames,iconNames,missingGlyph} from './shapes.js';
+import {shapeSection,fontNames,iconNames,missingGlyph,fontOf} from './shapes.js';
 export const nodeTypes=['imported','box','open_box','cylinder','open_cylinder','revolve','sphere','ellipsoid','capsule','torus','extrude','text','engrave_text','emboss_text','union','subtract','intersect'];
 export const faces=['top','bottom','front','back','left','right','around'];
 const faceTypes=['engrave_text','emboss_text'];
@@ -138,6 +138,7 @@ export function buildSolidProgram(api,program,params){
  validateProgram(withImport(program,params));const notes=[],owned=[],own=x=>(owned.push(x),x),solids=[],regions=[],contains=[];const {Manifold:M,CrossSection:C}=api;
  try{
   for(const n of program.nodes){let solid,region=null;const i=solids.length;contains[i]=new Set((n.inputs||[]).flatMap(k=>[...(contains[k]||[])]));
+   if(['text',...faceTypes].includes(n.type)&&!n.icon&&fontOf(n.font,n.text)!==fontOf(n.font))notes.push('El texto «'+n.text+'» usa Gentilis para conservar sus acentos y letras.');
    if(n.type==='imported')solid=importedSolid(api,own,params.importedMesh);
    if(n.type==='box')solid=own(M.cube(n.size,true));
    if(n.type==='open_box'){const [w,d,h]=n.size,t=n.wallThickness,outer=own(M.cube(n.size,true)),inner=own(own(M.cube([w-2*t,d-2*t,h],true)).translate([0,0,floorOf(n)]));solid=own(outer.subtract(inner));}

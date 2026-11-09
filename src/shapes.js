@@ -7,10 +7,12 @@ const loader=new FontLoader();
 export const fonts={gentilis:loader.parse(gentilis),helvetiker:loader.parse(helvetiker),optimer:loader.parse(optimer)};
 export const fontNames=Object.keys(fonts);
 export const iconNames=['heart','paw','star','leaf','flower','bone','house','moon'];
-export function fontOf(name){return fonts[name]||fonts.gentilis;}
-// Typefaces without accents use the plain letter (ó → o) instead of failing.
-export function printableText(text,fontName){const font=fontOf(fontName);return [...text.normalize('NFC')].map(c=>c===' '||font.data.glyphs[c]?c:(c.normalize('NFD').replace(/[̀-ͯ]/g,''))).join('');}
-export function missingGlyph(text,fontName){const font=fontOf(fontName);for(const c of printableText(text,fontName))if(c!==' '&&!font.data.glyphs[c])return c;return null;}
+export function printableText(text){return text.normalize('NFC');}
+export function fontOf(name,text=''){
+ const preferred=fonts[name]||fonts.gentilis,chars=[...printableText(text)].filter(c=>c!==' ');
+ return chars.some(c=>!preferred.data.glyphs[c])&&chars.every(c=>fonts.gentilis.data.glyphs[c])?fonts.gentilis:preferred;
+}
+export function missingGlyph(text,fontName){const font=fontOf(fontName,text);for(const c of printableText(text))if(c!==' '&&!font.data.glyphs[c])return c;return null;}
 
 const circle=(cx,cy,r,n=48)=>Array.from({length:n},(_,i)=>[cx+r*Math.cos(i/n*Math.PI*2),cy+r*Math.sin(i/n*Math.PI*2)]);
 // Each icon is drawn in a 100×100 box (y up) as a union of filled outlines, minus optional holes.
@@ -33,7 +35,7 @@ function section(C,own,fill,holes,size){
 // The node's flat outline, centered on the origin: an icon `fontSize` tall, or the text in its typeface.
 export function shapeSection(C,own,n){
  if(n.icon){const def=icons[n.icon]();return section(C,own,def.fill,def.hole,n.fontSize);}
- const shapes=fontOf(n.font).generateShapes(printableText(n.text,n.font),n.fontSize),polys=shapes.flatMap(s=>{const e=s.extractPoints(6);return [e.shape,...e.holes].map(p=>p.map(v=>[v.x,v.y]));});
+ const shapes=fontOf(n.font,n.text).generateShapes(printableText(n.text),n.fontSize),polys=shapes.flatMap(s=>{const e=s.extractPoints(6);return [e.shape,...e.holes].map(p=>p.map(v=>[v.x,v.y]));});
  const cs=own(new C(polys,'EvenOdd'));if(cs.isEmpty())throw Error('El texto quedó vacío.');const b=cs.bounds();
  return own(cs.translate([-(b.min[0]+b.max[0])/2,-(b.min[1]+b.max[1])/2]));
 }
