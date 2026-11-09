@@ -1,5 +1,17 @@
 # Del pedido al llavero de Mutual UNIR
 
+## Nueva prueba con logo y QR adjuntos · 09/11/2026
+
+El recorrido real en producción no leía la imagen QR: la trataba como otro logo y volvía a pedir el enlace. Se agregó lectura local con jsQR, preservación del logo entre mensajes y error recuperable cuando el QR es ilegible. El archivo `mutual-unir-qr-alta-calidad.png` entregado por Ale contiene **`https://www.mutualunir.com.ar/`**, distinto del enlace elegido en la prueba anterior registrada abajo. Se reconstruyen los módulos con ese destino, sin vectorizar la imagen ni usar IA.
+
+La prueba también detectó que el selector nativo de guardado no aparecía en el navegador integrado. La exportación principal usa ahora la descarga del navegador; la elección de carpeta sigue disponible como acción explícita. La prueba de navegador simula un selector de guardado que nunca responde para prevenir esa regresión.
+
+La base incorpora biseles de 0,2 mm abajo y 0,4 mm arriba, con el QR al ras sobre z=0. El llavero real exportado mide 50 × 60 × 3,8 mm, conserva la marca y el texto completos, tiene cuatro colores, 8.072 triángulos en la unión y un volumen de 9.908,94 mm³. El script `scripts/verify-keychain-file.mjs` inspecciona los sólidos del archivo descargado: cuatro materiales sin solapamiento, una sola pieza física cerrada, medidas correctas, revisión geométrica sin incidencias y QR leído desde las superficies exportadas. Archivos y reporte: `artifacts/llavero-mutual-unir-premium-20261109/` (ignorados por Git).
+
+Ale confirmó A2L con AMS y boquilla de 0,4 mm. La validación digital no acredita todavía la impresión física, resistencia o lectura con teléfono del objeto terminado.
+
+## Prueba anterior con un enlace escrito
+
 Prueba realizada desde el navegador integrado con el archivo original `logo.png` suministrado por el usuario. Destino del QR: `https://mutualunir.com/`, después de que el usuario eligiera la web.
 
 ## Fricción observada

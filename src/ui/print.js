@@ -1,6 +1,6 @@
 // «Imprimir»: revisión, un archivo principal para Bambu Studio y el resto de los formatos a demanda.
 import {stlBytes,threeMfBytes} from '../export.js';
-import {revisionName,handoffZip,handoffFiles,writeFolder,saveAsFile} from '../handoff.js';
+import {revisionName,handoffZip,handoffFiles,writeFolder} from '../handoff.js';
 import {fitCoupon} from '../solid-program.js';
 import {productPhoto,thumbnail,quoteHtml,printHtml} from '../studio-output.js';
 import {costOf,durationText} from '../printability.js';
@@ -44,7 +44,8 @@ export function createPrint({dialog,app,toast}){
   $('supportStep').textContent=review.issues.some(i=>i.kind==='overhang')?'Elegí el perfil de tu impresora y activá Soportes (tipo árbol, automático). Laminá y mirá la vista previa.':'Elegí el perfil de tu impresora, laminá y mirá la vista previa. No necesita soportes.';
  }
  const model=()=>{const m=app.model();if(!m)toast('Todavía no hay una pieza para exportar.');return m;};
- async function save(bytes,name,ext,type){const result=await saveAsFile(window,bytes,name,ext);if(result.method==='download'){download(bytes,name,type);toast('Descarga iniciada.');}else if(result.method==='picker')toast('Archivo guardado.');}
+ // Use the browser download flow: embedded browsers may expose a save picker that never opens.
+ function save(bytes,name,ext,type){download(bytes,name,type);toast('Descarga iniciada.');}
 
  $('export3mf').onclick=async()=>{const m=model();if(!m)return;try{await save(threeMfBytes(m),revisionName(app.params().project)+'.3mf','3mf','model/3mf');}catch(e){toast('No se pudo guardar: '+e.message);}};
  $('exportStl').onclick=()=>{const m=model();if(m)download(stlBytes(m.combined),basename(app.params().project)+'.stl','model/stl');};

@@ -12,6 +12,7 @@ import {readMeshFile} from '../mesh-import.js';
 import {prepareImport,describeImport} from '../solid-program.js';
 import {projectFromBytes} from '../project-file.js';
 import {readKeychainLogo,keychainUrl,isTwoSidedKeychain} from '../keychain.js';
+import {readQrImage} from '../qr-image.js';
 import {reliefFromImage,generatedParams} from '../relief.js';
 import {validateGeneration} from '../generation-spec.js';
 import {revisionFromResult,prepareForgeProposal,appendForgeRevision} from '../forge-project.js';
@@ -189,16 +190,25 @@ function findUrl(text){
 // Llavero logo + QR: se arma en el navegador con el archivo original, sin generar imágenes.
 async function keychainFlow(prompt,attachment,epoch){
  const draft=S.keychainDraft||(S.keychainDraft={});
- if(attachment){setBusy(true,'Preparando los colores y contornos del logo…');const r=await readKeychainLogo(attachment.file,attachment.name);check(epoch);draft.logo=r.config;}
+ S.pendingIntent='keychain';
+ if(!draft.logo&&S.params.kind==='keychain'){draft.logo=S.params.keychain;draft.qrText??=S.params.qrText;}
+ if(attachment){
+  setBusy(true,'Leyendo el archivo adjunto…');const qr=await readQrImage(attachment.file);check(epoch);
+  if(qr){draft.qrText=keychainUrl(qr);draft.qrName=attachment.name;}
+  else{
+   if(/\bqr\b/i.test(attachment.name)||draft.logo&&/\bqr\b/i.test(prompt)&&!/cambi[aá]|reemplaz|nuevo logo/i.test(prompt))throw Error('No pude leer el QR adjunto. Conservé el logo; probá con un PNG más nítido o escribí el enlace.');
+   setBusy(true,'Preparando los colores y contornos del logo…');const r=await readKeychainLogo(attachment.file,attachment.name);check(epoch);draft.logo=r.config;
+  }
+ }
  const url=findUrl(prompt);if(url)draft.qrText=url;
  if(!draft.logo&&S.params.kind==='keychain')draft.logo=S.params.keychain;
- if(!draft.logo){S.pendingIntent='keychain';addMessage('assistant','Dale. Adjuntá el logo con el botón + (mejor un PNG con fondo transparente o un JPG con fondo blanco)'+(draft.qrText?'.':' y decime a qué dirección tiene que llevar el QR.'));return;}
- if(!draft.qrText){S.pendingIntent='keychain';addMessage('assistant','Ya tengo el logo. ¿A qué dirección tiene que llevar el QR? Por ejemplo, tu página web.');return;}
+ if(!draft.logo){S.pendingIntent='keychain';addMessage('assistant',(draft.qrText?'Leí el QR: lleva a '+draft.qrText+'. ':'Dale. ')+ 'Adjuntá el logo con el botón + (mejor un PNG con fondo transparente o un JPG con fondo blanco)'+(draft.qrText?'.':' y adjuntá el QR o decime su enlace.'));return;}
+ if(!draft.qrText){S.pendingIntent='keychain';addMessage('assistant','Ya tengo el logo. Adjuntá la imagen del QR con el botón + o escribí la dirección a la que tiene que llevar.');return;}
  setBusy(true,'Armando las dos caras del llavero…');await tick();check(epoch);
  const name=draft.logo.name.replace(/\.[^.]+$/,'');
  const candidate=validate({...defaults,kind:'keychain',keychain:draft.logo,qrText:draft.qrText,project:('Llavero · '+name).slice(0,60),shape:'round',width:50,height:60,thickness:3.2,relief:.6,hole:4,baseColor:'#ffffff',detailColor:'#30213d',caption:''});
  const built=build(candidate);S.pendingIntent=null;S.keychainDraft=null;S.relief=null;
- addMessage('assistant','Listo: un llavero de 50 × 60 mm con tu logo adelante, en '+(built.parts.length-1)+(built.parts.length-1===1?' color':' colores')+' sobre una base blanca, y el QR atrás que lleva a '+draft.qrText+'. Podés cambiar el tamaño o el enlace en «Tu pieza».');
+ addMessage('assistant','Listo: un llavero de 50 × 60 mm con bordes biselados y tu logo completo adelante, en '+(built.parts.length-1)+(built.parts.length-1===1?' color':' colores')+' sobre una base blanca, y el QR al ras del dorso que lleva a '+draft.qrText+'. '+(draft.qrName?'Leí el destino de '+draft.qrName+' y reconstruí sus módulos para imprimirlos con nitidez. ':'')+'Podés cambiar el tamaño o el enlace en «Tu pieza». Revisá los filamentos en Bambu Studio e imprimí una muestra para escanearla.');
  apply(candidate,built,'Llavero con logo y QR');
 }
 
