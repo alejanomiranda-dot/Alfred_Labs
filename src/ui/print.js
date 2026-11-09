@@ -17,7 +17,7 @@ export function createPrint({dialog,app,toast}){
  dialog.innerHTML=`<div class="sheet-head"><h2 id="printTitle">Imprimir</h2><button type="button" class="icon" data-close aria-label="Cerrar">${closeIcon}</button></div>
  <div id="printReview"></div>
  <button type="button" class="primary print-main" id="export3mf">Guardar para Bambu Studio (3MF)</button>
- <ol class="steps"><li>Abrí el archivo en Bambu Studio: Archivo → Importar, o arrastralo a la ventana.</li><li>Si tiene varios colores, asigná un filamento a cada uno. Las partes son un solo objeto: no las separes.</li><li>Elegí el perfil de tu impresora, laminá y mirá la vista previa.</li><li>Imprimí una primera muestra. Si tiene un QR, escanealo en la pieza real.</li></ol>
+ <ol class="steps"><li>Abrí el archivo en Bambu Studio: Archivo → Importar, o arrastralo a la ventana.</li><li>Si tiene varios colores, asigná un filamento a cada uno. Las partes son un solo objeto: no las separes.</li><li id="supportStep">Elegí el perfil de tu impresora, laminá y mirá la vista previa.</li><li>Imprimí una primera muestra. Si tiene un QR, escanealo en la pieza real.</li></ol>
  <details class="more"><summary>Más formatos y herramientas</summary>
   <div class="tools">
    <button type="button" id="exportStl">STL de una sola pieza</button>
@@ -41,6 +41,7 @@ export function createPrint({dialog,app,toast}){
   const list=document.createElement('ul');list.className='issues';
   for(const i of review.issues.length?review.issues:[{kind:'ok',text:'Sin problemas: no necesita soportes y las paredes tienen buen espesor.'}]){const li=document.createElement('li');li.className=i.kind;li.textContent=i.text;list.append(li);}
   host.append(list);
+  $('supportStep').textContent=review.issues.some(i=>i.kind==='overhang')?'Elegí el perfil de tu impresora y activá Soportes (tipo árbol, automático). Laminá y mirá la vista previa.':'Elegí el perfil de tu impresora, laminá y mirá la vista previa. No necesita soportes.';
  }
  const model=()=>{const m=app.model();if(!m)toast('Todavía no hay una pieza para exportar.');return m;};
  async function save(bytes,name,ext,type){const result=await saveAsFile(window,bytes,name,ext);if(result.method==='download'){download(bytes,name,type);toast('Descarga iniciada.');}else if(result.method==='picker')toast('Archivo guardado.');}

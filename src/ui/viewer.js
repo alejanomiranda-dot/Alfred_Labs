@@ -51,10 +51,10 @@ export function createViewer(host){
  renderer.setAnimationLoop(()=>{controls.update();if(dirty||controls.autoRotate){renderer.render(scene,camera);tools.beforeRender();dirty=false;}});
 
  return {
-  draw(model,parts,{keepView=false}={}){
+  draw(model,parts,{keepView=false,smooth=false}={}){
    while(group.children.length){const m=group.children[0];group.remove(m);m.geometry.dispose();m.material.dispose();}
    current=model;
-   for(const {mesh,color} of parts||[]){if(!mesh?.triangles.length)continue;const m=new THREE.Mesh(meshGeometry(mesh),new THREE.MeshStandardMaterial({color,roughness:.45,metalness:.08,flatShading:true}));m.castShadow=true;m.receiveShadow=true;group.add(m);}
+   for(const {mesh,color} of parts||[]){if(!mesh?.triangles.length)continue;const m=new THREE.Mesh(meshGeometry(mesh),new THREE.MeshStandardMaterial({color,roughness:.45,metalness:.08,flatShading:!smooth}));m.castShadow=true;m.receiveShadow=true;group.add(m);}
    tools.afterDraw();if(!keepView)frame(model);markDirty();
   },
   clear(){this.draw(null,[]);},
@@ -62,6 +62,25 @@ export function createViewer(host){
   get view(){return view;},
   frame:()=>frame(),
   repaint:paintGrid,
+  // Vistas para la revisión visual, sin mover la cámara de la persona.
+  snapshots(size=512){
+   if(!current)return [];
+   const saved={position:camera.position.clone(),up:camera.up.clone(),target:controls.target.clone(),grid:grid.visible,aspect:camera.aspect};
+   const dims=current.dimensions,center=new THREE.Vector3(0,0,(current.totalHeight||dims[2])/2),images=[];
+   const out=document.createElement('canvas');out.width=out.height=size;const ctx=out.getContext('2d');
+   const {width,height}=renderer.domElement;const side=Math.min(width,height);
+   camera.aspect=width/height;camera.updateProjectionMatrix();
+   const half=Math.min(camera.fov*Math.PI/360,Math.atan(Math.tan(camera.fov*Math.PI/360)*camera.aspect)),distance=Math.max(30,Math.hypot(...dims)/2/Math.sin(half)*1.1);
+   grid.visible=false;tools.overlay.visible=false;
+   for(const dir of [[.62,-.95,.75],[0,-1,.18],[1,0,.18]]){
+    camera.up.set(0,0,1);camera.position.copy(new THREE.Vector3(...dir).normalize().multiplyScalar(distance)).add(center);camera.lookAt(center);
+    renderer.render(scene,camera);
+    ctx.fillStyle='#ffffff';ctx.fillRect(0,0,size,size);ctx.drawImage(renderer.domElement,(width-side)/2,(height-side)/2,side,side,0,0,size,size);
+    images.push(out.toDataURL('image/jpeg',.82));
+   }
+   camera.position.copy(saved.position);camera.up.copy(saved.up);controls.target.copy(saved.target);grid.visible=saved.grid;tools.overlay.visible=true;controls.update();markDirty();
+   return images;
+  },
   tools,
   capture:()=>({renderer,scene,camera,hide:[grid,tools.overlay]})
  };

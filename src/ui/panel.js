@@ -100,7 +100,7 @@ function forgeControls(p,ctx){
  const rebuild=el('button',{type:'button',className:'secondary',textContent:'Ver esta versión'});rebuild.onclick=()=>ctx.forgeVersion(select.value);
  const source=el('button',{type:'button',className:'secondary',textContent:'Descargar fuente .scad'});source.onclick=()=>ctx.forgeSource(select.value);
  const notes=[...(selected?.assumptions||[]),...(selected?.caveats||[])];
- const summary=(selected?.description||'Pieza generada por Alfred.').split(/(?<=.)s/)[0];
+ const summary=(selected?.description||'Pieza generada por Alfred.').split(/(?<=\.)\s/)[0];
  return [
   group('Pieza generada',el('p',{className:'note',textContent:summary}),el('p',{className:'note',textContent:'Para cambiarla, pedíselo a Alfred: «más alta», «sin cola», «orejas más grandes».'})),
   group(null,el('details',{},el('summary',{textContent:'Avanzado · versiones, notas y fuente'}),el('label',{},'Versión',select),el('div',{className:'library-actions'},rebuild,source),notes.length?el('ul',{className:'note'},...notes.map(t=>el('li',{textContent:t}))):null,el('pre',{className:'forge-code',textContent:selected?.scad||''})))
@@ -135,10 +135,13 @@ export function renderStatus(host,{review,model,settings,money,durationText,cost
  if(!model){host.append(el('div',{className:'status idle'},el('strong',{textContent:'Todavía no hay pieza'}),'Contale a Alfred qué querés imprimir.'));return;}
  if(!review){host.append(el('div',{className:'status idle'},el('strong',{textContent:'Revisando la pieza…'})));return;}
  const c=costOf(review,settings),meta=el('span',{className:'meta',textContent:review.grams.toFixed(1).replace('.',',')+' g · '+durationText(review.seconds)+' · '+money(c.cost,settings)});
- const real=review.issues.filter(i=>i.kind!=='ok');
+ // Los voladizos se resuelven con soportes automáticos del laminador: no bloquean la impresión.
+ const real=review.issues.filter(i=>i.kind!=='ok'&&i.kind!=='overhang'),supports=review.issues.some(i=>i.kind==='overhang');
  if(!real.length){
   const print=el('button',{type:'button',textContent:'Imprimir'});print.onclick=onPrint;
-  host.append(el('div',{className:'status ok'},el('strong',{textContent:'Lista para imprimir'}),'No necesita soportes y las paredes tienen buen espesor.',meta,el('div',{className:'actions'},print)));return;
+  const actions=el('div',{className:'actions'},print);
+  if(supports){const heat=el('button',{type:'button',textContent:heatOn?'Ocultar marcas':'Ver dónde'});heat.onclick=onHeat;actions.append(heat);}
+  host.append(el('div',{className:'status ok'},el('strong',{textContent:supports?'Lista para imprimir con soportes':'Lista para imprimir'}),supports?'Algunas partes salen en el aire: activá los soportes automáticos en Bambu Studio.':'No necesita soportes y las paredes tienen buen espesor.',meta,actions));return;
  }
  const actions=el('div',{className:'actions'});
  const heat=el('button',{type:'button',textContent:heatOn?'Ocultar marcas':'Ver dónde'});heat.onclick=onHeat;actions.append(heat);

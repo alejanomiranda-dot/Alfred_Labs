@@ -3,7 +3,8 @@ import Module from 'manifold-3d';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import {defaults,validate,buildModel} from '../model.js';
 import {checkProposal,proposalChanges} from '../proposals.js';
-import {reviewPrint,costOf,durationText,composeRotation,countParts} from '../printability.js';
+import {reviewPrint,costOf,durationText,composeRotation,countParts,partsOf as meshParts,keepParts} from '../printability.js';
+import {stlBytes} from '../export.js';
 import {loadSettings,money} from '../settings.js';
 import {saveVersion,listProjects,deleteProject,countProjects,migrateLegacy} from '../library.js';
 import {thumbnail} from '../studio-output.js';
@@ -66,7 +67,7 @@ function refresh({keepView=false,panel=true,built=null}={}){
  S.model=null;
  if(built){S.model=built;S.params=built.params;}
  else if(hasPiece()){try{S.model=build(S.params);S.params=S.model.params;}catch(e){toast(e.message);}}
- viewer.draw(S.model,S.model?partsOf(S.model,S.params):[],{keepView});
+ viewer.draw(S.model,S.model?partsOf(S.model,S.params):[],{keepView,smooth:!!S.params.sourceInfo});
  $('dimensions').textContent=S.model?sizeText(S.model.dimensions):'';
  const flat=S.params.kind!=='free'||!!S.params.sourceInfo;$('viewFront').textContent=flat?'Frente':'Arriba';$('viewBack').textContent=flat?'Dorso':'Abajo';
  $('project').value=S.params.project||'';$('project').size=Math.max(8,Math.min(36,($('project').value.length||8)+1));
@@ -215,7 +216,7 @@ async function assistantFlow(prompt,attachment,epoch){
   result=await post('/api/assistant',{...body,...(correction?{correction}:{})});check(epoch);
   if(S.params!==base)throw Error('Cambiaste la pieza mientras pensaba. Volvé a enviar el pedido para incluir esos cambios.');
   if(result.route==='relief')return reliefFlow(result,attachment,epoch);
-  if(result.route==='forge'){addMessage('assistant',result.message);return forgeFlow('generate',result.forgePrompt,epoch,undefined,result.expectedSize);}
+  if(result.route==='forge'){addMessage('assistant',result.message);return forgeFlow('generate',result.forgePrompt,epoch,undefined,result.expectedSize,{title:prompt});}
   if(result.route==='keychain'){const url=result.params?.qrText&&result.params.qrText!==defaults.qrText?findUrl(result.params.qrText):null;if(url)(S.keychainDraft||(S.keychainDraft={})).qrText=url;return keychainFlow(prompt,attachment,epoch);}
   if(!result.canApply){addMessage('assistant',result.message);return;}
   try{checked=checkProposal(S.api,base,result);break;}catch(e){correction={error:e.message.slice(0,1500),program:result.params.freeDesign??null};}
@@ -227,8 +228,11 @@ async function assistantFlow(prompt,attachment,epoch){
  }
  addMessage('assistant',result.message);
  const clean=withoutLeftovers(checked.candidate);
- if(clean!==checked.candidate){S.relief=null;const candidate=validate(clean);apply(candidate,build(candidate));}
- else apply(checked.candidate,checked.built);
+ let candidate=checked.candidate,built=checked.built;
+ if(clean!==checked.candidate){S.relief=null;candidate=validate(clean);built=build(candidate);}
+ // Una pieza nueva toma el nombre del pedido en vez de «Mi pieza».
+ if(!hasPieceParams(base)&&(!built.params.project||built.params.project==='Mi pieza'||built.params.project===defaults.project))built.params={...built.params,project:shortName(prompt)};
+ apply(candidate,built);
 }
 
 // Relieve: con imagen adjunta se usa tal cual; si no, se genera. Cambiar medidas después no vuelve a generar.
@@ -250,7 +254,7 @@ async function rebuildRelief(spec,invert=S.relief?.invert){
 }
 
 // Nombre corto a partir del pedido: hasta la primera coma o punto.
-function shortName(text){const first=String(text||'').split(/[.,;:\n]/)[0].trim().replace(/^(un|una|el|la)\s+/i,'');return (first.charAt(0).toUpperCase()+first.slice(1)).slice(0,48)||'Mi pieza';}
+function shortName(text){const first=String(text||'').split(/[.,;:\n]/)[0].trim().replace(/^(quiero|necesito|me gustaría|haceme|hacé|creá|crear|hacer|generar|diseñar|diseñá|armá|armar)\s+/i,'').replace(/^(un|una|el|la)\s+/i,'');return (first.charAt(0).toUpperCase()+first.slice(1)).slice(0,48)||'Mi pieza';}
 
 // Generador avanzado (OpenSCAD): para formas orgánicas o lo que el modelado por medidas no resuelve.
 async function forgeAvailability(){
@@ -260,13 +264,27 @@ async function forgeAvailability(){
 }
 // Problemas verificables de una pieza generada: partes sueltas y medidas lejos de lo pedido.
 function forgeProblems(built,expected){
- const problems=[],parts=countParts(built.combined),got=built.dimensions,axes=['ancho','profundidad','alto'];
- if(parts>1)problems.push('tiene '+parts+' partes que no se tocan y se imprimirían sueltas: uní todas en un solo sólido continuo, con al menos 1 mm de superposición (por ejemplo orejas, cola o patas metidas en el cuerpo o la cabeza)');
+ const problems=[],pieces=meshParts(built.combined),parts=pieces.length,got=built.dimensions,axes=['ancho','profundidad','alto'];
+ if(parts>1)problems.push('tiene '+parts+' partes que no se tocan y se imprimirían sueltas ('+describeLoose(pieces)+'): metelas al menos 1,5 mm dentro de la parte vecina para que todo sea un solo sólido continuo');
  const off=(expected||[]).map((want,i)=>want>0&&Math.abs(got[i]-want)>Math.max(2,want*.05)?axes[i]+' '+want+' mm':'').filter(Boolean);
+ let contact=0;try{const r=reviewPrint(built.combined,built.volume);if(r.issues.some(i=>i.kind==='contact')){contact=1;problems.push('apoya muy poco en la cama ('+Math.round(r.contactArea)+' mm²): bajá el modelo 2 mm y cortalo plano en z=0 para que tenga una base amplia');}}catch{}
  if(off.length)problems.push('mide '+sizeText(got)+' y tiene que medir '+off.join(', ')+': ajustá la escala de toda la pieza (por ejemplo envolviéndola en scale) para llegar a esas medidas, conservando las proporciones');
- return {problems,score:parts-1+off.length};
+ return {problems,score:parts-1+off.length+contact};
 }
-async function forgeFlow(action,prompt,epoch,scad,expected=null){
+// Dónde está cada parte suelta, en palabras, para que la corrección sepa qué unir.
+function describeLoose(pieces){
+ const min=[0,1,2].map(j=>Math.min(...pieces.map(p=>p.min[j]))),max=[0,1,2].map(j=>Math.max(...pieces.map(p=>p.max[j])));
+ const where=(p,j,words)=>{const c=((p.min[j]+p.max[j])/2-min[j])/Math.max(1e-6,max[j]-min[j]);return c<.34?words[0]:c>.66?words[2]:words[1];};
+ return pieces.slice(1,4).map(p=>{const size=p.max.map((v,j)=>Math.max(1,Math.round(v-p.min[j]))).join(' × ');return 'una parte de '+size+' mm '+[where(p,2,['abajo','a media altura','arriba']),where(p,1,['adelante','en el centro','atrás']),where(p,0,['a la izquierda','al medio','a la derecha'])].join(', ');}).join('; ');
+}
+// Último recurso: detalles sueltos diminutos (menos del 2 % de la superficie) se quitan del STL.
+function dropTinyParts(api,base,result,archive,checked){
+ const pieces=meshParts(checked.built.combined),total=pieces.reduce((a,p)=>a+p.area,0);
+ if(pieces.length<2||pieces.slice(1).some(p=>p.area>total*.02))return null;
+ const bytes=stlBytes(keepParts(checked.built.combined,[pieces[0]]));let bin='';for(let i=0;i<bytes.length;i+=32768)bin+=String.fromCharCode(...bytes.subarray(i,i+32768));
+ return {checked:prepareForgeProposal(api,base,{...result,files:{stl:btoa(bin)}},archive),removed:pieces.length-1};
+}
+async function forgeFlow(action,prompt,epoch,scad,expected=null,{polish=true,note='Pieza generada',title=prompt}={}){
  const status=await forgeAvailability();check(epoch);
  if(!status[action]){addMessage('assistant',action==='generate'?'Esta pieza necesita el generador avanzado, que no está disponible en este momento. Probá describirla con medidas y formas simples.':'El generador avanzado no está disponible en este momento.');return;}
  const archive=S.params.forge,previous=archive?.revisions.find(r=>r.id===archive.selected);
@@ -275,7 +293,7 @@ async function forgeFlow(action,prompt,epoch,scad,expected=null){
  let result=await post('/api/forge',body,345000);check(epoch);
  let revision=action==='compile'?{...previous}:revisionFromResult(result,action==='example'?'Árbol VERO y ALE · ejemplo':prompt);
  let nextArchive=action==='compile'?archive:appendForgeRevision(archive,revision);
- const base=action==='generate'&&!S.params.forge?{...S.params,project:shortName(prompt),keepProject:true}:S.params;
+ const base=action==='generate'&&!S.params.forge?{...S.params,project:shortName(title),keepProject:true}:S.params;
  let checked=prepareForgeProposal(S.api,base,result,nextArchive);
  // Se verifica la pieza real; si tiene partes sueltas o no llega a las medidas pedidas, se corrige sola una vez.
  let review=action==='generate'?forgeProblems(checked.built,expected):{problems:[],score:0};
@@ -287,10 +305,29 @@ async function forgeFlow(action,prompt,epoch,scad,expected=null){
    if(fixedReview.score<review.score){revision=fixed;nextArchive=fixedArchive;checked=fixedCheck;review=fixedReview;}
   }catch(e){if(e instanceof Stale)throw e;}
  }
+ if(action==='generate'&&countParts(checked.built.combined)>1){const cleaned=dropTinyParts(S.api,base,result,nextArchive,checked);if(cleaned){checked=cleaned.checked;review=forgeProblems(checked.built,expected);addMessage('assistant','Quité '+(cleaned.removed===1?'un detalle suelto muy chico':cleaned.removed+' detalles sueltos muy chicos')+' que no se iba'+(cleaned.removed===1?'':'n')+' a poder imprimir.');}}
  S.relief=null;
  if(action==='example')addMessage('assistant',revision.description);
  else if(review.problems.length)addMessage('assistant','Ojo: la pieza '+review.problems[0].split(':')[0]+'. Pedime que lo ajuste o mirá «Tu pieza».');
- apply(checked.candidate,checked.built,action==='compile'?'Versión recuperada':'Pieza generada');
+ apply(checked.candidate,checked.built,action==='compile'?'Versión recuperada':note);
+ if(action==='generate'&&polish)await polishShape(prompt,epoch,expected);
+}
+// Revisión visual: Alfred mira la pieza desde tres lados; si no se reconoce bien lo pedido, la pule una vez.
+async function critique(subject,epoch){
+ try{const images=viewer.snapshots();if(!images.length)return null;const r=await post('/api/assistant',{action:'critique',subject,images},120000);check(epoch);return typeof r?.score==='number'?r:null;}
+ catch(e){if(e instanceof Stale)throw e;return null;}
+}
+async function polishShape(prompt,epoch,expected){
+ setBusy(true,'Mirando cómo quedó…');await tick();
+ const first=await critique(prompt,epoch);
+ if(!first||first.score>=8||!first.fixes)return;
+ setBusy(true,'Puliendo la forma para que se reconozca mejor…');
+ try{await forgeFlow('generate','Mejorá la forma de la versión anterior: '+first.fixes,epoch,undefined,expected,{polish:false,note:'Forma pulida'});}
+ catch(e){if(e instanceof Stale)throw e;return;}
+ setBusy(true,'Comparando con la versión anterior…');await tick();
+ const second=await critique(prompt,epoch);
+ if(second&&second.score<first.score&&S.history.length){S.params=S.history.pop();S.future=[];refresh();addMessage('event','Volví a la primera versión: se reconocía mejor');}
+ else if(second?.verdict)addMessage('assistant',second.verdict);
 }
 async function forgeVersion(id){
  const archive=S.params.forge,revision=archive?.revisions.find(r=>r.id===id);if(!revision||S.busy)return;

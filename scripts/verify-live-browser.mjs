@@ -47,6 +47,7 @@ try{
  if(process.argv.includes('--image')){
   await newProject();
   let calls=0;page.on('request',r=>{if(r.url().endsWith('/api/assistant')&&r.method()==='POST')calls++;});
+  page.on('response',async r=>{if(r.url().endsWith('/api/assistant')&&r.request().postDataJSON()?.action==='generateVisual'){try{const d=await r.json();await fs.writeFile(directory+'/relieve-imagen.png',Buffer.from(d.imageDataUrl.split(',')[1],'base64'));}catch{}}});
   await chat('Una luna creciente y tres estrellas grandes en relieve sobre una placa de 60 por 50 mm, base de 2 mm y profundidad de 3 mm. Adorno plano con dorso plano.');
   assert.equal(routes.at(-1),'relief');
   const before=calls;await page.locator('#pieceControls input[type=range]').nth(3).fill('4');await page.waitForTimeout(1500);assert.equal(calls,before);

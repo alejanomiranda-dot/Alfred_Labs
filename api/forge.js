@@ -20,7 +20,7 @@ export function createForgeHandler({env=process.env,run=runRemoteForge,now=Date.
   if(used.length>=20)return send(429,{error:'Se alcanzó el límite de 20 pedidos por hora. Probá más tarde.'});
   if(active>=1)return send(429,{error:'Forge está ocupado. Intentá en unos segundos.'});
   used.push(time);active++;const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),260000);res.on?.('close',()=>{if(!res.writableEnded)controller.abort();});
+  const timer=setTimeout(()=>controller.abort(),290000);res.on?.('close',()=>{if(!res.writableEnded)controller.abort();});
   try{return send(200,await run(body,{env,signal:controller.signal}));}
   catch(e){return send(e.status||500,{error:e.status?e.message:'No se pudo completar la propuesta.',code:e.code||'forge_error'});}
   finally{clearTimeout(timer);active--;}
