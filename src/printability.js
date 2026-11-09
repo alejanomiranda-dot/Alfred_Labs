@@ -34,6 +34,8 @@ const orientations=[[0,0,0],[180,0,0],[90,0,0],[-90,0,0],[0,90,0],[0,-90,0]];
 
 // Partes que no se tocan entre sí: se imprimirían sueltas. Une vértices por posición (malla indexada o no).
 // Componentes conectados de la malla, de mayor a menor superficie, con su caja envolvente.
+// La superficie de un hueco cerrado (caras hacia adentro, volumen negativo) no es una parte suelta:
+// se suma a la parte más chica que la contiene, así quitar partes nunca rellena un hueco.
 export function partsOf(mesh){
  const p=mesh.positions,k=mesh.numProp,t=mesh.triangles,ids=new Map(),index=new Int32Array(p.length/k);
  for(let v=0;v<index.length;v++){const key=Math.round(p[v*k]*1e3)+','+Math.round(p[v*k+1]*1e3)+','+Math.round(p[v*k+2]*1e3);let id=ids.get(key);if(id===undefined){id=ids.size;ids.set(key,id);}index[v]=id;}
@@ -41,22 +43,26 @@ export function partsOf(mesh){
  for(let i=0;i<t.length;i+=3){const a=find(index[t[i]]),b=find(index[t[i+1]]),c=find(index[t[i+2]]);parent[b]=a;parent[find(c)]=a;}
  const groups=new Map(),at=i=>[p[t[i]*k],p[t[i]*k+1],p[t[i]*k+2]];
  for(let i=0;i<t.length;i+=3){
-  const root=find(index[t[i]]);let g=groups.get(root);if(!g){g={triangles:[],area:0,min:[Infinity,Infinity,Infinity],max:[-Infinity,-Infinity,-Infinity]};groups.set(root,g);}
+  const root=find(index[t[i]]);let g=groups.get(root);if(!g){g={triangles:[],area:0,volume:0,min:[Infinity,Infinity,Infinity],max:[-Infinity,-Infinity,-Infinity]};groups.set(root,g);}
   const A=at(i),B=at(i+1),C=at(i+2),u=[B[0]-A[0],B[1]-A[1],B[2]-A[2]],w=[C[0]-A[0],C[1]-A[1],C[2]-A[2]];
   g.area+=Math.hypot(u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0])/2;g.triangles.push(i/3);
+  g.volume+=(A[0]*(B[1]*C[2]-B[2]*C[1])+A[1]*(B[2]*C[0]-B[0]*C[2])+A[2]*(B[0]*C[1]-B[1]*C[0]))/6;
   for(const P of [A,B,C])for(let j=0;j<3;j++){g.min[j]=Math.min(g.min[j],P[j]);g.max[j]=Math.max(g.max[j],P[j]);}
  }
- return [...groups.values()].sort((x,y)=>y.area-x.area);
+ const all=[...groups.values()],solids=all.filter(g=>g.volume>=0),holes=all.filter(g=>g.volume<0);
+ // Una malla entera al revés no tiene partes «sólidas»: se cuenta tal cual.
+ if(!solids.length)return all.sort((x,y)=>y.area-x.area);
+ const inside=(h,g)=>[0,1,2].every(j=>g.min[j]<=h.min[j]+1e-6&&h.max[j]<=g.max[j]+1e-6);
+ for(const h of holes){
+  const owner=solids.filter(g=>inside(h,g)).sort((x,y)=>x.volume-y.volume)[0];
+  if(!owner){solids.push(h);continue;}
+  owner.triangles.push(...h.triangles);owner.area+=h.area;owner.volume+=h.volume;
+ }
+ return solids.sort((x,y)=>y.area-x.area);
 }
 // Malla con solo los triángulos de las partes elegidas (para quitar detalles sueltos diminutos).
 export function keepParts(mesh,parts){const tri=[];for(const g of parts)for(const i of g.triangles)tri.push(mesh.triangles[i*3],mesh.triangles[i*3+1],mesh.triangles[i*3+2]);return {...mesh,triangles:new Uint32Array(tri)};}
-export function countParts(mesh){
- const p=mesh.positions,k=mesh.numProp,t=mesh.triangles,ids=new Map(),index=new Int32Array(p.length/k);
- for(let v=0;v<index.length;v++){const key=Math.round(p[v*k]*1e3)+','+Math.round(p[v*k+1]*1e3)+','+Math.round(p[v*k+2]*1e3);let id=ids.get(key);if(id===undefined){id=ids.size;ids.set(key,id);}index[v]=id;}
- const parent=new Int32Array(ids.size).map((_,i)=>i),find=x=>{while(parent[x]!==x){parent[x]=parent[parent[x]];x=parent[x];}return x;};
- for(let i=0;i<t.length;i+=3){const a=find(index[t[i]]),b=find(index[t[i+1]]),c=find(index[t[i+2]]);parent[b]=a;parent[find(c)]=a;}
- const used=new Set();for(let i=0;i<t.length;i++)used.add(find(index[t[i]]));return used.size;
-}
+export const countParts=mesh=>partsOf(mesh).length;
 export function reviewPrint(mesh,volume,options={}){
  const opts={...printDefaults,...options},soup=triangles(mesh),stats=surfaceStats(soup,opts);
  // Thin walls: from each sampled face, a ray goes inward; the distance to the opposite surface is the local thickness.
@@ -74,7 +80,8 @@ export function reviewPrint(mesh,volume,options={}){
  const ranking=orientations.map(rotation=>{const s=rotation===orientations[0]?stats:surfaceStats(rotateSoup(soup,rotation),opts);return {rotation,overhang:s.overhang,contact:s.contact,score:s.overhang-Math.min(s.contact,400)*.5+(s.contact<20?500:0)};}).sort((x,y)=>x.score-y.score);
  const best=ranking[0],current=ranking.find(r=>r.rotation===orientations[0]);
  const suggestion=best.rotation!==orientations[0]&&best.overhang<current.overhang*.6-10?best:null;
- // Material and time.
+ // Material and time. A mesh with its faces reversed has negative volume; the material never is.
+ volume=Math.abs(Number(volume)||0);
  const shell=Math.min(volume,stats.area*opts.shell),material=shell+Math.max(0,volume-shell)*opts.infill+stats.supportVolume;
  const grams=material/1000*opts.density,layers=Math.ceil(stats.height/opts.layer),seconds=material/opts.flow+layers*opts.layerSeconds+opts.warmupSeconds;
  const issues=[];

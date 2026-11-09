@@ -4,9 +4,10 @@ import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import {defaults,validate,buildModel} from '../model.js';
 import {checkProposal,proposalChanges} from '../proposals.js';
 import {reviewPrint,costOf,durationText,composeRotation,countParts,partsOf as meshParts,keepParts} from '../printability.js';
-import {stlBytes} from '../export.js';
+import {stlBytes,threeMfBytes} from '../export.js';
+import {revisionName} from '../handoff.js';
 import {loadSettings,money} from '../settings.js';
-import {saveVersion,listProjects,deleteProject,countProjects,migrateLegacy} from '../library.js';
+import {saveVersion,listProjects,deleteProject,countProjects,migrateLegacy,pruneProject} from '../library.js';
 import {thumbnail} from '../studio-output.js';
 import {readMeshFile} from '../mesh-import.js';
 import {prepareImport,describeImport} from '../solid-program.js';
@@ -15,7 +16,10 @@ import {readKeychainLogo,keychainUrl,isTwoSidedKeychain} from '../keychain.js';
 import {readQrImage} from '../qr-image.js';
 import {reliefFromImage,generatedParams} from '../relief.js';
 import {validateGeneration} from '../generation-spec.js';
-import {revisionFromResult,prepareForgeProposal,appendForgeRevision} from '../forge-project.js';
+import {revisionFromResult,prepareForgeProposal,appendForgeRevision,finishOf,isSculpt} from '../forge-project.js';
+import {buildSculpt} from '../sculpt.js';
+import {sculptPalette} from '../../shared/sculpt-schema.js';
+import {hasFinish} from '../finish.js';
 import {openPhotoMeasure} from '../photo-measure.js';
 import {openSparePart} from '../spare-part.js';
 import {setupTheme} from './theme.js';
@@ -68,7 +72,7 @@ function refresh({keepView=false,panel=true,built=null}={}){
  S.model=null;
  if(built){S.model=built;S.params=built.params;}
  else if(hasPiece()){try{S.model=build(S.params);S.params=S.model.params;}catch(e){toast(e.message);}}
- viewer.draw(S.model,S.model?partsOf(S.model,S.params):[],{keepView,smooth:!!S.params.sourceInfo});
+ viewer.draw(S.model,S.model?partsOf(S.model,S.params):[],{keepView,smooth:!!S.params.sourceInfo||(S.params.kind==='free'&&hasFinish(finishOf(S.params.freeDesign)))});
  $('dimensions').textContent=S.model?sizeText(S.model.dimensions):'';
  const flat=S.params.kind!=='free'||!!S.params.sourceInfo;$('viewFront').textContent=flat?'Frente':'Arriba';$('viewBack').textContent=flat?'Dorso':'Abajo';
  $('project').value=S.params.project||'';$('project').size=Math.max(8,Math.min(36,($('project').value.length||8)+1));
@@ -87,6 +91,8 @@ function apply(candidate,built,note){
  const changes=note||summarize(before,built.params);
  refresh({built});
  addMessage('event',changes+' · '+sizeText(S.model.dimensions));
+ // Historial: cada pieza que arma Alfred queda en «Mis diseños», para volver a ella o descargarla otra vez.
+ storeVersion(changes).catch(()=>{});
 }
 // Resumen en palabras simples, sin nombres internos.
 function summarize(before,after){
@@ -215,7 +221,7 @@ async function keychainFlow(prompt,attachment,epoch){
 async function assistantFlow(prompt,attachment,epoch){
  if(!S.assistantReady){addMessage('assistant','El asistente con IA no está disponible en este servidor. Podés abrir un proyecto, importar un STL o armar un llavero con logo y QR.');return;}
  const base=S.params,params=Object.fromEntries(assistantFields.filter(k=>k in base).map(k=>[k,base[k]]));
- const currentEngine=!hasPiece()?'none':base.forge?'forge':base.sourceInfo?'relief':base.kind==='keychain'?'keychain':base.kind==='free'?'cad':'template';
+ const currentEngine=!hasPiece()?'none':base.forge?(isSculpt(base.forge)?'sculpt':'forge'):base.sourceInfo?'relief':base.kind==='keychain'?'keychain':base.kind==='free'?'cad':'template';
  const body={prompt,currentEngine,style:S.settings,params,history:recentHistory().slice(0,-1),
   ...(attachment?{imageDataUrl:attachment.dataUrl}:{}),
   ...(base.sourceInfo?{pendingGeneration:base.sourceInfo}:{}),
@@ -227,6 +233,7 @@ async function assistantFlow(prompt,attachment,epoch){
   if(S.params!==base)throw Error('Cambiaste la pieza mientras pensaba. Volvé a enviar el pedido para incluir esos cambios.');
   if(result.route==='relief')return reliefFlow(result,attachment,epoch);
   if(result.route==='forge'){addMessage('assistant',result.message);return forgeFlow('generate',result.forgePrompt,epoch,undefined,result.expectedSize,{title:prompt});}
+  if(result.route==='sculpt'){addMessage('assistant',result.message);return sculptFlow('generate',result.forgePrompt,epoch,{expected:result.expectedSize,attachment,title:prompt});}
   if(result.route==='keychain'){const url=result.params?.qrText&&result.params.qrText!==defaults.qrText?findUrl(result.params.qrText):null;if(url)(S.keychainDraft||(S.keychainDraft={})).qrText=url;return keychainFlow(prompt,attachment,epoch);}
   if(!result.canApply){addMessage('assistant',result.message);return;}
   try{checked=checkProposal(S.api,base,result);break;}catch(e){correction={error:e.message.slice(0,1500),program:result.params.freeDesign??null};}
@@ -284,13 +291,15 @@ async function forgeAvailability(){
  return {example:runs,compile:runs&&!!s.compiler,generate:runs&&!!s.compiler&&!!s.ai};
 }
 // Problemas verificables de una pieza generada: partes sueltas y medidas lejos de lo pedido.
-function forgeProblems(built,expected){
+function forgeProblems({built,inverted},expected){
  const problems=[],pieces=meshParts(built.combined),parts=pieces.length,got=built.dimensions,axes=['ancho','profundidad','alto'];
+ // La app ya la dio vuelta para medirla bien, pero las restas de OpenSCAD sobre una malla al revés pueden tapar agujeros o huecos.
+ if(inverted)problems.push('salió con las caras hacia adentro y algún agujero o hueco puede haber quedado tapado: en cada polyhedron() los puntos de cada cara van en sentido horario mirando la pieza desde afuera, así que invertí ese orden (o usá sphere, hull y scale en lugar de polyhedron) para que las restas funcionen');
  if(parts>1)problems.push('tiene '+parts+' partes que no se tocan y se imprimirían sueltas ('+describeLoose(pieces)+'): metelas al menos 1,5 mm dentro de la parte vecina para que todo sea un solo sólido continuo');
  const off=(expected||[]).map((want,i)=>want>0&&Math.abs(got[i]-want)>Math.max(2,want*.05)?axes[i]+' '+want+' mm':'').filter(Boolean);
  let contact=0;try{const r=reviewPrint(built.combined,built.volume);if(r.issues.some(i=>i.kind==='contact')){contact=1;problems.push('apoya muy poco en la cama ('+Math.round(r.contactArea)+' mm²): bajá el modelo 2 mm y cortalo plano en z=0 para que tenga una base amplia');}}catch{}
  if(off.length)problems.push('mide '+sizeText(got)+' y tiene que medir '+off.join(', ')+': ajustá la escala de toda la pieza (por ejemplo envolviéndola en scale) para llegar a esas medidas, conservando las proporciones');
- return {problems,score:parts-1+off.length+contact};
+ return {problems,score:parts-1+off.length+contact+(inverted?1:0)};
 }
 // Dónde está cada parte suelta, en palabras, para que la corrección sepa qué unir.
 function describeLoose(pieces){
@@ -300,9 +309,11 @@ function describeLoose(pieces){
 }
 // Último recurso: detalles sueltos diminutos (menos del 2 % de la superficie) se quitan del STL.
 function dropTinyParts(api,base,result,archive,checked){
- const pieces=meshParts(checked.built.combined),total=pieces.reduce((a,p)=>a+p.area,0);
+ // Sobre la malla compilada, no la terminada: el acabado se vuelve a aplicar al armar la pieza.
+ const raw=checked.candidate.importedMesh,mesh={numProp:3,positions:Float32Array.from(raw.vertices),triangles:Uint32Array.from(raw.triangles)};
+ const pieces=meshParts(mesh),total=pieces.reduce((a,p)=>a+p.area,0);
  if(pieces.length<2||pieces.slice(1).some(p=>p.area>total*.02))return null;
- const bytes=stlBytes(keepParts(checked.built.combined,[pieces[0]]));let bin='';for(let i=0;i<bytes.length;i+=32768)bin+=String.fromCharCode(...bytes.subarray(i,i+32768));
+ const bytes=stlBytes(keepParts(mesh,[pieces[0]]));let bin='';for(let i=0;i<bytes.length;i+=32768)bin+=String.fromCharCode(...bytes.subarray(i,i+32768));
  return {checked:prepareForgeProposal(api,base,{...result,files:{stl:btoa(bin)}},archive),removed:pieces.length-1};
 }
 async function forgeFlow(action,prompt,epoch,scad,expected=null,{polish=true,note='Pieza generada',title=prompt}={}){
@@ -310,40 +321,79 @@ async function forgeFlow(action,prompt,epoch,scad,expected=null,{polish=true,not
  if(!status[action]){addMessage('assistant',action==='generate'?'Esta pieza necesita el generador avanzado, que no está disponible en este momento. Probá describirla con medidas y formas simples.':'El generador avanzado no está disponible en este momento.');return;}
  const archive=S.params.forge,previous=archive?.revisions.find(r=>r.id===archive.selected);
  setBusy(true,action==='generate'?'Modelando la pieza con el generador avanzado… puede tardar unos minutos.':'Preparando la pieza…');
- const body=action==='example'?{action}:action==='compile'?{action,scad}:{action,prompt,history:recentHistory().slice(-8).map(m=>({...m,content:m.content.slice(0,2000)})),...(previous?{previous:previous.scad}:{})};
+ const body=action==='example'?{action}:action==='compile'?{action,scad}:{action,prompt,history:recentHistory().slice(-8).map(m=>({...m,content:m.content.slice(0,2000)})),...(previous?{previous:previous.scad,previousFinish:finishOf(S.params.freeDesign)}:{})};
  let result=await post('/api/forge',body,345000);check(epoch);
  let revision=action==='compile'?{...previous}:revisionFromResult(result,action==='example'?'Árbol VERO y ALE · ejemplo':prompt);
  let nextArchive=action==='compile'?archive:appendForgeRevision(archive,revision);
  const base=action==='generate'&&!S.params.forge?{...S.params,project:shortName(title),keepProject:true}:S.params;
  let checked=prepareForgeProposal(S.api,base,result,nextArchive);
  // Se verifica la pieza real; si tiene partes sueltas o no llega a las medidas pedidas, se corrige sola una vez.
- let review=action==='generate'?forgeProblems(checked.built,expected):{problems:[],score:0};
+ let review=action==='generate'?forgeProblems(checked,expected):{problems:[],score:0};
  if(review.problems.length){
   setBusy(true,'Revisando medidas y uniones de la pieza…');
   try{
    result=await post('/api/forge',{action:'generate',prompt:'Corregí la versión anterior porque '+review.problems.join('; y ')+'. No cambies nada más.',history:[],previous:revision.scad},345000);check(epoch);
-   const fixed=revisionFromResult(result,prompt+' · corregida'),fixedArchive=appendForgeRevision(nextArchive,fixed),fixedCheck=prepareForgeProposal(S.api,base,result,fixedArchive),fixedReview=forgeProblems(fixedCheck.built,expected);
+   const fixed=revisionFromResult(result,prompt+' · corregida'),fixedArchive=appendForgeRevision(nextArchive,fixed),fixedCheck=prepareForgeProposal(S.api,base,result,fixedArchive),fixedReview=forgeProblems(fixedCheck,expected);
    if(fixedReview.score<review.score){revision=fixed;nextArchive=fixedArchive;checked=fixedCheck;review=fixedReview;}
   }catch(e){if(e instanceof Stale)throw e;}
  }
- if(action==='generate'&&countParts(checked.built.combined)>1){const cleaned=dropTinyParts(S.api,base,result,nextArchive,checked);if(cleaned){checked=cleaned.checked;review=forgeProblems(checked.built,expected);addMessage('assistant','Quité '+(cleaned.removed===1?'un detalle suelto muy chico':cleaned.removed+' detalles sueltos muy chicos')+' que no se iba'+(cleaned.removed===1?'':'n')+' a poder imprimir.');}}
+ if(action==='generate'&&countParts(checked.built.combined)>1){const cleaned=dropTinyParts(S.api,base,result,nextArchive,checked);if(cleaned){checked=cleaned.checked;review=forgeProblems(checked,expected);addMessage('assistant','Quité '+(cleaned.removed===1?'un detalle suelto muy chico':cleaned.removed+' detalles sueltos muy chicos')+' que no se iba'+(cleaned.removed===1?'':'n')+' a poder imprimir.');}}
  S.relief=null;
  if(action==='example')addMessage('assistant',revision.description);
  else if(review.problems.length)addMessage('assistant','Ojo: la pieza '+review.problems[0].split(':')[0]+'. Pedime que lo ajuste o mirá «Tu pieza».');
  apply(checked.candidate,checked.built,action==='compile'?'Versión recuperada':note);
- if(action==='generate'&&polish)await polishShape(prompt,epoch,expected);
+ if(action==='generate'&&polish)await polishShape(prompt,epoch,fixes=>forgeFlow('generate','Mejorá la forma de la versión anterior: '+fixes,epoch,undefined,expected,{polish:false,note:'Forma pulida'}));
+}
+// Figuras orgánicas: OpenAI describe piezas suaves que se funden y el navegador arma un solo sólido cerrado,
+// con base plana y a la medida pedida. No necesita OpenSCAD. Pasa por los mismos controles, el acabado y la revisión visual.
+async function sculptFlow(action,prompt,epoch,{expected=null,attachment=null,polish=true,note='Figura generada',title=prompt}={}){
+ const archive=S.params.forge,previous=archive?.revisions.find(r=>r.id===archive.selected),before=previous?.sculpt?S.model?.dimensions:null;
+ let result;
+ if(action==='compile')result={...previous};
+ else{
+  setBusy(true,'Esculpiendo la figura… puede tardar un par de minutos.');
+  result=await post('/api/assistant',{action:'sculpt',prompt,history:recentHistory().slice(-8).map(m=>({...m,content:m.content.slice(0,2000)})),
+   ...(previous?.sculpt?{previous:previous.sculpt,previousFinish:finishOf(S.params.freeDesign)}:{}),
+   ...(expected?{expectedSize:expected}:{}),...(attachment?{imageDataUrl:attachment.dataUrl}:{})},200000);check(epoch);
+ }
+ // Medida final: la pedida; si no, la de la versión anterior (un cambio no la achica ni la agranda); si no, 80 mm de alto.
+ const target=action==='compile'?result.sculpt.target||null:expected?.some(v=>v>0)?expected:before?[0,0,Math.round(before[2]*10)/10]:null;
+ const sized=r=>({...r.sculpt,...(target?{target}:{})});
+ setBusy(true,'Armando la figura en 3D…');await tick();check(epoch);
+ let mesh=buildSculpt(S.api,sized(result),{name:shortName(title)});check(epoch);
+ // Una pieza que se ve (ala, cola, pata) y quedó suelta se pide pegar una vez, en vez de perderla sin avisar.
+ const lost=[...new Set(mesh.loose.filter(l=>l.share>.005).map(l=>l.name))];
+ if(action==='generate'&&lost.length){
+  setBusy(true,'Pegando partes que quedaron sueltas…');
+  try{
+   const fixed=await post('/api/assistant',{action:'sculpt',prompt:'Estas piezas quedaron separadas del resto de la figura y se perderían al imprimir: '+lost.join(', ')+'. Movelas o agrandalas para que entren al menos 2 mm dentro de su vecina (el cuerpo, la cabeza o la base). No cambies nada más.',history:[],previous:result.sculpt,previousFinish:result.finish},200000);check(epoch);
+   const again=buildSculpt(S.api,sized(fixed),{name:shortName(title)}),share=m=>m.loose.reduce((a,l)=>a+l.share,0);check(epoch);
+   if(share(again)<share(mesh)){result={...fixed,description:result.description,assumptions:result.assumptions};mesh=again;}
+  }catch(e){if(e instanceof Stale)throw e;}
+ }
+ const revision=action==='compile'?previous:revisionFromResult({...result,sculpt:{...sized(result),placement:mesh.placement}},prompt);
+ const nextArchive=action==='compile'?archive:appendForgeRevision(archive,revision);
+ const base=action==='generate'&&!S.params.forge?{...S.params,project:shortName(title),keepProject:true}:S.params;
+ const checked=prepareForgeProposal(S.api,base,{mesh},nextArchive);
+ const review=forgeProblems(checked,target);
+ S.relief=null;
+ for(const text of mesh.notes)addMessage('assistant',text);
+ if(action!=='compile'&&sculptPalette(revision.sculpt)?.merged)addMessage('assistant','La figura pedía más de 4 colores: uní los más parecidos para que entre en los 4 carretes del AMS.');
+ if(review.problems.length)addMessage('assistant','Ojo: la figura '+review.problems[0].split(':')[0]+'. Pedime que lo ajuste o mirá «Tu pieza».');
+ apply(checked.candidate,checked.built,action==='compile'?'Versión recuperada':note);
+ if(action==='generate'&&polish)await polishShape(prompt,epoch,fixes=>sculptFlow('generate','Mejorá la forma de la versión anterior: '+fixes,epoch,{expected:target,polish:false,note:'Forma pulida',title}));
 }
 // Revisión visual: Alfred mira la pieza desde tres lados; si no se reconoce bien lo pedido, la pule una vez.
 async function critique(subject,epoch){
  try{const images=viewer.snapshots();if(!images.length)return null;const r=await post('/api/assistant',{action:'critique',subject,images},120000);check(epoch);return typeof r?.score==='number'?r:null;}
  catch(e){if(e instanceof Stale)throw e;return null;}
 }
-async function polishShape(prompt,epoch,expected){
+async function polishShape(prompt,epoch,regenerate){
  setBusy(true,'Mirando cómo quedó…');await tick();
  const first=await critique(prompt,epoch);
  if(!first||first.score>=8||!first.fixes)return;
  setBusy(true,'Puliendo la forma para que se reconozca mejor…');
- try{await forgeFlow('generate','Mejorá la forma de la versión anterior: '+first.fixes,epoch,undefined,expected,{polish:false,note:'Forma pulida'});}
+ try{await regenerate(first.fixes);}
  catch(e){if(e instanceof Stale)throw e;return;}
  setBusy(true,'Comparando con la versión anterior…');await tick();
  const second=await critique(prompt,epoch);
@@ -354,9 +404,9 @@ async function forgeVersion(id){
  const archive=S.params.forge,revision=archive?.revisions.find(r=>r.id===id);if(!revision||S.busy)return;
  const epoch=S.epoch;S.controller=new AbortController();
  const before=S.params;S.params={...S.params,forge:{...archive,selected:id}};
- try{await forgeFlow('compile','',epoch,revision.scad);}catch(e){if(!(e instanceof Stale)){S.params=before;toast(e.message);}}finally{if(epoch===S.epoch)setBusy(false);}
+ try{await (revision.sculpt?sculptFlow('compile','',epoch):forgeFlow('compile','',epoch,revision.scad));}catch(e){if(!(e instanceof Stale)){S.params=before;toast(e.message);}}finally{if(epoch===S.epoch)setBusy(false);}
 }
-function forgeSource(id){const r=S.params.forge?.revisions.find(x=>x.id===id);if(r)download(r.scad,'alfred-'+r.id.slice(0,8)+'.scad','text/plain');}
+function forgeSource(id){const r=S.params.forge?.revisions.find(x=>x.id===id);if(!r)return;if(r.sculpt)download(JSON.stringify(r.sculpt,null,1),'alfred-figura-'+r.id.slice(0,8)+'.json','application/json');else download(r.scad,'alfred-'+r.id.slice(0,8)+'.scad','text/plain');}
 
 $('stopAssistant').onclick=()=>S.controller?.abort();
 
@@ -426,18 +476,29 @@ $('importProject').onchange=async()=>{
  try{if(file.size>40e6)throw Error('El proyecto es demasiado grande.');const candidate=validate(projectFromBytes(file.name,new Uint8Array(await file.arrayBuffer())));build(candidate);resetProject(candidate);refresh();toast('Proyecto abierto.');}
  catch(e){toast('No se pudo abrir: '+e.message);}
 };
+async function storeVersion(note){
+ if(!S.model)throw Error('Todavía no hay una pieza para guardar.');S.projectId=S.projectId||crypto.randomUUID();
+ const projectId=S.projectId,params=S.params;
+ await saveVersion({id:crypto.randomUUID(),projectId,date:new Date().toISOString(),name:params.project,note,params:validate(params),thumb:thumbnail(viewer.capture())});
+ if(S.params===params){S.dirty=false;updateSaved();}
+ await pruneProject(projectId);updateCount();
+}
 async function saveCurrent(){
- try{if(!S.model)throw Error('Todavía no hay una pieza para guardar.');S.projectId=S.projectId||crypto.randomUUID();
-  await saveVersion({id:crypto.randomUUID(),projectId:S.projectId,date:new Date().toISOString(),name:S.params.project,params:validate(S.params),thumb:thumbnail(viewer.capture())});
-  S.dirty=false;updateSaved();updateCount();toast('Guardado en «Mis diseños».');}
+ try{await storeVersion('Guardado a mano');toast('Guardado en «Mis diseños».');}
  catch(e){toast('No se pudo guardar: '+e.message);}
+}
+// Arma la pieza de una versión guardada y descarga su 3MF, sin abrirla ni tocar la pieza actual.
+async function downloadVersion(v){
+ toast('Preparando el archivo…');await tick();
+ try{const m=build(validate(v.params));download(threeMfBytes(m),revisionName(v.name)+'.3mf','model/3mf');toast('Descarga iniciada: '+sizeText(m.dimensions)+'.');}
+ catch(e){toast('No se pudo descargar: '+e.message);}
 }
 $('saveVersion').onclick=saveCurrent;
 function updateCount(){countProjects().then(n=>{$('savedCount').textContent=n;}).catch(()=>{});}
 async function showLibrary(){
  const host=$('libraryList');host.replaceChildren();let projects=[];
  try{projects=await listProjects();}catch{host.textContent='Este navegador no permite guardar proyectos.';}
- if(!projects.length&&!host.textContent)host.innerHTML='<p class="hint">Todavía no guardaste piezas. Cuando tengas una, tocá «Guardar» arriba.</p>';
+ if(!projects.length&&!host.textContent)host.innerHTML='<p class="hint">Todavía no hay piezas. Las que arme Alfred se guardan solas acá.</p>';
  const open=v=>{try{const candidate=validate(v.params);build(candidate);resetProject(candidate);S.projectId=v.projectId;refresh();$('library').close();toast('Abriste «'+v.name+'».');}catch(e){toast(e.message);}};
  for(const p of projects){
   const card=document.createElement('article');card.className='library-card';
@@ -446,10 +507,16 @@ async function showLibrary(){
   const actions=document.createElement('div');actions.className='library-actions';
   const openBtn=document.createElement('button');openBtn.className='primary';openBtn.textContent='Abrir';openBtn.onclick=()=>open(p.latest);
   const list=document.createElement('ol');list.className='version-list';list.hidden=true;
-  for(const v of p.versions){const li=document.createElement('li'),b=document.createElement('button');b.className='link';b.textContent=new Date(v.date).toLocaleString('es-AR');b.onclick=()=>open(v);li.append(b);list.append(li);}
-  const versions=document.createElement('button');versions.textContent='Versiones';versions.onclick=()=>{list.hidden=!list.hidden;};
+  for(const v of p.versions){
+   const li=document.createElement('li'),b=document.createElement('button'),file=document.createElement('button');
+   b.className='link';b.textContent=new Date(v.date).toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'})+(v.note?' · '+v.note:'');b.title='Abrir esta versión';b.onclick=()=>open(v);
+   file.className='link';file.textContent='3MF';file.title='Descargar esta versión para Bambu Studio';file.onclick=()=>downloadVersion(v);
+   li.append(b,' ',file);list.append(li);
+  }
+  const fileBtn=document.createElement('button');fileBtn.textContent='Descargar 3MF';fileBtn.onclick=()=>downloadVersion(p.latest);
+  const versions=document.createElement('button');versions.textContent='Versiones ('+p.versions.length+')';versions.onclick=()=>{list.hidden=!list.hidden;};
   const remove=document.createElement('button');remove.className='ghost';remove.textContent='Eliminar';remove.onclick=async()=>{if(!confirm('¿Eliminar «'+p.name+'» y sus '+p.versions.length+' versiones? No se puede deshacer.'))return;await deleteProject(p.projectId);if(S.projectId===p.projectId)S.projectId=null;updateCount();showLibrary();};
-  actions.append(openBtn,versions,remove);card.append(img,info,actions,list);host.append(card);
+  actions.append(openBtn,fileBtn,versions,remove);card.append(img,info,actions,list);host.append(card);
  }
  if(!$('library').open)$('library').showModal();
 }

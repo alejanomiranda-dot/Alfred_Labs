@@ -1,6 +1,8 @@
 // Declarative CAD. Data only: no eval, scripts, imports, filesystem or network.
 import {shapeSection,fontNames,iconNames,missingGlyph,fontOf} from './shapes.js';
-export const nodeTypes=['imported','box','open_box','cylinder','open_cylinder','revolve','sphere','ellipsoid','capsule','torus','extrude','text','engrave_text','emboss_text','union','subtract','intersect'];
+import {applyFinish,finishTextures} from './finish.js';
+import {sculptColorZones} from './sculpt.js';
+export const nodeTypes=['imported','box','open_box','cylinder','open_cylinder','revolve','sphere','ellipsoid','capsule','torus','extrude','text','engrave_text','emboss_text','union','subtract','intersect','finish'];
 export const faces=['top','bottom','front','back','left','right','around'];
 const faceTypes=['engrave_text','emboss_text'];
 const booleanTypes=['union','subtract','intersect'];
@@ -38,10 +40,16 @@ export function validateProgram(program){
   if(n.icon!==undefined&&n.icon!==''&&!iconNames.includes(n.icon))throw Error('Ícono no disponible.');
   if(['text',...faceTypes].includes(n.type)){number(n.fontSize,1,80,'Tamaño del texto');if(!n.icon){if(typeof n.text!=='string'||!n.text.trim()||n.text.length>60)throw Error('Texto inválido.');const c=missingGlyph(n.text,n.font);if(c)throw Error('Carácter no disponible en esa tipografía: '+c);}}
   if(booleanTypes.includes(n.type)){if(!Array.isArray(n.inputs)||n.inputs.length<2||n.inputs.length>30||n.inputs.some(v=>!Number.isInteger(v)||v<0||v>=i))throw Error('Las operaciones deben referirse a volúmenes anteriores.');}
+  if(n.type==='finish'){
+   if(!finishTextures.includes(n.texture))throw Error('Acabado no disponible.');
+   number(n.smooth,0,1,'Suavizado');number(n.depth,0,3,'Profundidad de la textura');number(n.scale,1,60,'Tamaño de la textura');
+   if(n.seed!==undefined&&(!Number.isInteger(n.seed)||n.seed<0||n.seed>1e6))throw Error('Variante de textura inválida.');
+   if(!Array.isArray(n.inputs)||n.inputs.length!==1||!Number.isInteger(n.inputs[0])||n.inputs[0]<0||n.inputs[0]>=i)throw Error('El acabado debe aplicarse sobre una pieza anterior.');
+  }
  });
  if(vertices>2000)throw Error('El contorno tiene demasiados puntos.');
  // Only the last operation is the piece: anything not consumed by a later boolean would be silently lost.
- const used=new Set(program.nodes.flatMap(n=>[...booleanTypes,...faceTypes].includes(n.type)?n.inputs:[]));
+ const used=new Set(program.nodes.flatMap(n=>[...booleanTypes,...faceTypes,'finish'].includes(n.type)?n.inputs:[]));
  const loose=program.nodes.slice(0,-1).map((_,i)=>i).filter(i=>!used.has(i));
  if(loose.length)throw Error('Operaciones sueltas que no forman parte de la pieza final: '+loose.map(i=>i+1).join(', ')+'. Combinalas con unión, sustracción o intersección.');
  return program;
@@ -98,24 +106,34 @@ function wrapAround(C,own,target,n){
 }
 // The imported file is kept outside the program (it can be large); the program only says where it is used.
 export function withImport(program,params){return {...program,hasImported:Boolean(params?.importedMesh)};}
-function importedSolid(api,own,data){
- const mesh=new api.Mesh({numProp:3,vertProperties:Float32Array.from(data.vertices),triVerts:Uint32Array.from(data.triangles)});mesh.merge();
- let solid;try{solid=own(new api.Manifold(mesh));}catch{throw Error('La pieza importada no es un sólido cerrado (tiene agujeros o caras sueltas en la malla). Repará el archivo en Bambu Studio o en el programa donde lo hiciste.');}
- if(solid.status()!=='NoError'||solid.isEmpty())throw Error('La pieza importada no es un sólido cerrado (tiene agujeros o caras sueltas en la malla). Repará el archivo en Bambu Studio o en el programa donde lo hiciste.');
- return solid;
+// A closed mesh whose faces all point inward is still a valid manifold, but with negative volume
+// (for example a polyhedron() written with OpenSCAD's opposite winding). It is the same shape with
+// its faces reversed, so it is turned right side out; info.inverted tells the caller it happened.
+function importedSolid(api,own,data,info={}){
+ const build=flip=>{
+  const triVerts=Uint32Array.from(data.triangles);
+  if(flip)for(let i=0;i<triVerts.length;i+=3){const b=triVerts[i+1];triVerts[i+1]=triVerts[i+2];triVerts[i+2]=b;}
+  const mesh=new api.Mesh({numProp:3,vertProperties:Float32Array.from(data.vertices),triVerts});mesh.merge();
+  let solid;try{solid=own(new api.Manifold(mesh));}catch{throw Error('La pieza importada no es un sólido cerrado (tiene agujeros o caras sueltas en la malla). Repará el archivo en Bambu Studio o en el programa donde lo hiciste.');}
+  if(solid.status()!=='NoError'||solid.isEmpty())throw Error('La pieza importada no es un sólido cerrado (tiene agujeros o caras sueltas en la malla). Repará el archivo en Bambu Studio o en el programa donde lo hiciste.');
+  return solid;
+ };
+ const solid=build(false);
+ info.inverted=solid.volume()<0;
+ return info.inverted?build(true):solid;
 }
 // Turns a freshly read file into the stored piece: it must be a closed solid; heavy meshes are
 // simplified with a tolerance of hundredths of a millimeter so the project stays light.
 export function prepareImport(api,file){
  const owned=[],own=x=>(owned.push(x),x);
  try{
-  let solid=importedSolid(api,own,file);const original=solid.numTri();let tolerance=0;
+  const info={};let solid=importedSolid(api,own,file,info);const original=solid.numTri();let tolerance=0;
   for(const t of [.01,.02,.05]){if(solid.numTri()<=60000)break;solid=own(solid.simplify(t));tolerance=t;}
   if(solid.numTri()>150000)throw Error('La pieza es demasiado detallada para importarla. Simplificala antes en otro programa.');
   const raw=solid.getMesh(),vertices=[],triangles=Array.from(raw.triVerts);
   for(let i=0;i<raw.vertProperties.length;i+=raw.numProp)vertices.push(...[0,1,2].map(k=>Math.round(raw.vertProperties[i+k]*1e4)/1e4));
   const b=solid.boundingBox();
-  return {mesh:{name:file.name,vertices,triangles},size:b.max.map((v,i)=>v-b.min[i]),original,triangles:solid.numTri(),tolerance,volume:solid.volume()};
+  return {mesh:{name:file.name,vertices,triangles},size:b.max.map((v,i)=>v-b.min[i]),original,triangles:solid.numTri(),tolerance,volume:solid.volume(),inverted:info.inverted};
  }finally{for(const x of owned.reverse())x.delete();}
 }
 // What the guide needs to place things on an imported piece: its exact extents and real cuts at several heights
@@ -133,6 +151,16 @@ export function describeImport(api,mesh){
   }
   return {ocupa:{x:[round(b.min[0]),round(b.max[0])],y:[round(b.min[1]),round(b.max[1])],z:[round(b.min[2]),round(b.max[2])]},cortes:profile};
  }finally{for(const x of owned.reverse())x.delete();}
+}
+// The organic finish takes a second or two; the same piece with the same steps is reused on every redraw.
+const finishCache=new WeakMap();
+function finishedSolid(api,own,input,n,importedMesh,steps){
+ const key=JSON.stringify(steps),cache=importedMesh&&typeof importedMesh==='object'?finishCache.get(importedMesh)||new Map():null;
+ const hit=cache?.get(key);
+ if(hit)return own(new api.Manifold(new api.Mesh({numProp:3,vertProperties:hit.vertices,triVerts:hit.triangles})));
+ const out=applyFinish(api,input,n);if(!out)return input;own(out);
+ if(cache){const raw=out.getMesh();cache.set(key,{vertices:Float32Array.from(raw.vertProperties.filter((_,k)=>k%raw.numProp<3)),triangles:new Uint32Array(raw.triVerts)});if(cache.size>4)cache.delete(cache.keys().next().value);finishCache.set(importedMesh,cache);}
+ return out;
 }
 export function buildSolidProgram(api,program,params){
  validateProgram(withImport(program,params));const notes=[],owned=[],own=x=>(owned.push(x),x),solids=[],regions=[],contains=[];const {Manifold:M,CrossSection:C}=api;
@@ -175,8 +203,11 @@ export function buildSolidProgram(api,program,params){
    if(n.type==='union')solid=own(M.union(n.inputs.map(i=>solids[i])));
    if(n.type==='subtract'){solid=solids[n.inputs[0]];for(const i of n.inputs.slice(1))solid=own(solid.subtract(solids[i]));}
    if(n.type==='intersect'){solid=solids[n.inputs[0]];for(const i of n.inputs.slice(1))solid=own(solid.intersect(solids[i]));}
+   if(n.type==='finish')solid=finishedSolid(api,own,solids[n.inputs[0]],n,params?.importedMesh,program.nodes.slice(0,i+1));
    if(region){regions.push({color:n.color.toLowerCase(),solid:region});contains[i].add(regions.length-1);}
    // Un relieve en colores reclama, para cada color, lo que sobresale de la placa dentro de su contorno.
+   // Una figura esculpida en colores: cada color reclama su zona de la figura (y del acabado, que viene después).
+   if(n.type==='imported'&&!params?.importedColors){const r=params?.forge?.revisions.find(x=>x.id===params.forge.selected);if(r?.sculpt)for(const zone of sculptColorZones(api,r.sculpt,own)){regions.push(zone);contains[i].add(regions.length-1);}}
    if(n.type==='imported'&&params?.importedColors)for(const layer of params.importedColors.layers){const zone=own(own(own(new C(layer.polygons,'EvenOdd')).extrude(1000)).translate([0,0,params.importedColors.zFrom]));regions.push({color:layer.color,solid:zone});contains[i].add(regions.length-1);}
    solid=own(own(solid.rotate(n.rotation)).translate(n.position));
    if(n.rotation.some(Boolean)||n.position.some(Boolean))for(const r of contains[i])regions[r].solid=own(own(regions[r].solid.rotate(n.rotation)).translate(n.position));
@@ -199,7 +230,8 @@ export function buildSolidProgram(api,program,params){
    parts=[{mesh:toMesh(rest),color:base,name:'Base'},...[...byColor].reverse().map(([color,piece],k)=>({mesh:toMesh(piece),color,name:'Color '+(k+2)}))];
   }
   if(mesh.triangles.length/3>200000)throw Error('La pieza generada es demasiado compleja.');
-  const components=solid.decompose();const count=components.length;components.forEach(s=>s.delete());
+  // Un hueco cerrado sale como componente de volumen negativo: no es un volumen separado.
+  const components=solid.decompose();const count=components.filter(s=>s.volume()>0).length;components.forEach(s=>s.delete());
   return {params,base:parts?parts[0].mesh:mesh,detail:{numProp:3,positions:new Float32Array(),triangles:new Uint32Array()},parts,combined:mesh,volume:solid.volume(),dimensions,totalHeight:dimensions[2],operationBounds,warnings:['Diseño libre: revisar medidas, paredes, encastres y soportes en Bambu Studio. No es una validación de resistencia.',...notes,...(count>1?[`La pieza contiene ${count} volúmenes separados. Revisá si deben estar unidos.`]:[])],qr:null};
  }finally{for(const x of owned.reverse())x.delete();}
 }

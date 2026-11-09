@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import {spawn} from 'node:child_process';
-import {validateSource} from '../shared/forge-schema.js';
+import {validateSource,validateFinish,finishFromModel,forgeTextures} from '../shared/forge-schema.js';
 const exampleUrl=new URL('../experiments/alfred-forge/examples/arbol-vero-ale.scad',import.meta.url);
 export const fileLimit=12*1024*1024;
 const fail=(message,status=400,code='invalid_request')=>Object.assign(Error(message),{status,code});
@@ -77,11 +77,12 @@ export function validateForgeRequest(body){
  if(body.action==='compile'){try{return {action:'compile',scad:validateSource(body.scad)};}catch(e){throw fail(e.message);}}
  if(typeof body.prompt!=='string'||!body.prompt.trim()||body.prompt.length>2000)throw fail('Escribí un pedido de hasta 2000 caracteres.');
  if(body.previous!==undefined){try{validateSource(body.previous);}catch(e){throw fail(e.message);}}
+ let previousFinish;if(body.previousFinish!==undefined&&body.previousFinish!==null){try{previousFinish=validateFinish(body.previousFinish);}catch(e){throw fail(e.message);}}
  const history=Array.isArray(body.history)?body.history.slice(-8).map(m=>{
   if(!m||!['user','assistant'].includes(m.role)||typeof m.content!=='string'||m.content.length>2000)throw fail('Conversación de Forge inválida.');
   return {role:m.role,content:m.content};
  }):[];
- return {action:'generate',prompt:body.prompt.trim(),previous:body.previous,history};
+ return {action:'generate',prompt:body.prompt.trim(),previous:body.previous,previousFinish,history};
 }
 export const forgeModel=env=>env.OPENAI_FORGE_MODEL||'gpt-6.1-sol';
 export const forgeInstructions=`Sos Alfred Forge, un modelador experto en OpenSCAD 2021.01 para impresión 3D FDM (boquilla 0,4 mm, capas de 0,2 mm, PLA). Devolvé un único programa completo, en mm, que compile sin errores y produzca UNA pieza lista para imprimir sin retoques.
@@ -94,10 +95,23 @@ CALIDAD DE FORMA
 IMPRIMIBLE SIN RETOQUES
 - Todo es un solo sólido continuo: cada parte se mete al menos 1,5 mm dentro de la parte vecina (orejas dentro de la cabeza, cabeza dentro del cuerpo, cola pegada al cuerpo y a la base). Ninguna parte flota.
 - Base plana y estable: hundí el modelo unos 2 mm bajo z=0 y cortalo con intersection() contra un cubo grande con z>=0, de modo que apoye en la cama con un área amplia (al menos un tercio de su huella). Nada sobresale por debajo de z=0.
+- La base sale de cortar la propia forma, nunca de agregarle un pie: no sumes cilindros, anillos, discos ni pedestales debajo de una figura salvo que la persona pida un pedestal. En formas redondas (esfera, luna, huevo, cabeza) hundí la forma entre un 8 y un 12 % de su alto bajo z=0 antes de cortar: queda un apoyo plano de la mitad del diámetro, sin escalón. Si además lleva una abertura abajo, el apoyo tiene que ser al menos 15 mm más ancho que la abertura.
 - Evitá voladizos de más de 45° siempre que la forma lo permita: preferí pendientes, apoyos sobre el cuerpo o la base, y colas o brazos que bajen hasta la base en vez de quedar en el aire.
 - Espesores mínimos de 1,2 mm; salientes finos de al menos 2 mm.
 - Medidas: si la persona pide una medida total (alto, ancho o largo), envolvé el modelo terminado en resize() con esa medida y auto=true para las demás (por ejemplo resize([0,0,80],auto=true)), y después aplicá el corte de la base. Si no pide medidas, elegí un tamaño razonable de escritorio (50 a 90 mm).
+- Preferí primitivas (sphere, cylinder, hull, scale) antes que polyhedron(). Si usás polyhedron(), tiene que ser cerrado y los puntos de cada cara van en sentido horario mirando la pieza desde afuera (es el orden de OpenSCAD); al revés, las restas tapan agujeros y la pieza sale mal.
 - $fn entre 24 y 40. Máximo 290 mm por eje. Mantené la malla liviana: pelo, barba, plumas o pelaje se insinúan con pocos volúmenes grandes (mechones o bloques con hull) y surcos, nunca con decenas de esferas chicas.
+
+ACABADO (finish)
+Alfred suaviza y texturiza la pieza después de compilarla: redondea las facetas y talla una textura fina sobre la superficie, sin tocar la base plana, las aberturas ni las aristas vivas, y sin bajar ninguna pared de 1,2 mm. Por eso, en OpenSCAD modelá solo la FORMA grande; la textura fina va en finish y NO se modela con primitivas (nada de cráteres, rugosidad, vetas, escamas ni pelos hechos con decenas de esferas o restas: salen facetados y pesan).
+- texture: none (liso), craters (luna, asteroide, superficie con impactos), rock (piedra, roca, montaña, tronco viejo, terreno), wood (madera, corteza, tablas), scales (dragón, pez, reptil, piña), fur (gato, perro, oso, peluche, animales con pelo). Personas, bustos, objetos de uso, piezas técnicas y juguetes lisos: none.
+- smooth (0 a 1): cuánto se redondean las facetas. Figuras orgánicas, animales, bustos y la luna: 0,7 a 1. Objetos con caras planas o encastres: 0 a 0,3. Piezas técnicas o con medidas de encaje: 0.
+- La textura tiene que VERSE a un metro de distancia: si la persona la pide, elegí valores marcados, no tímidos. Alfred ya protege solo las paredes (nunca bajan de 1,2 mm), la base y las aberturas, así que NO achiques depth_mm por el espesor de la pared ni por los soportes: la textura no agrega voladizos.
+- depth_mm (0 a 3), según el tamaño mayor de la pieza. craters: 1,2 a 1,6 hasta 60 mm; 1,6 a 2,2 hasta 100 mm; 2,2 a 3 más grande. rock 0,6 a 1,2; wood 0,4 a 0,7; scales 0,6 a 1; fur 0,4 a 0,7. Con texture none, 0.
+- scale_mm (1 a 60): tamaño de cada motivo, proporcional a la pieza. craters: radio de un cráter mediano, un 12 a 15 % del diámetro (11 mm en una luna de 90 mm, 16 mm en una de 120). rock 6 a 12 % del tamaño mayor; wood 6 a 10; scales 5 a 8 % del largo del cuerpo (4 a 6 mm en un animal de 80 mm); fur 2 a 4.
+- Para una pieza hueca con cráteres (por ejemplo una luna para una lamparita), modelá una esfera lisa hueca con su abertura y dejá los cráteres al acabado.
+- El acabado ya mezcla tamaños: con craters salen solos muchos cráteres chicos (desde un 28 % de scale_mm) y algunos grandes (hasta 1,5 veces). Para «más cráteres chicos» o «más variados» NO bajes scale_mm por debajo del 10 % del diámetro: subí depth_mm o dejalo igual.
+- Si hay acabado anterior y el pedido no habla de la textura, devolvé exactamente el mismo acabado (corregir forma o medidas no lo cambia). Si pide «más cráteres», «más marcados» o «más liso», ajustá depth_mm, scale_mm o smooth.
 
 REGLAS
 - No uses include, use, import, surface, red ni archivos externos.
@@ -106,10 +120,11 @@ REGLAS
 - description: una o dos frases simples en español rioplatense sobre la pieza y su tamaño. assumptions: supuestos breves. caveats: advertencias de impresión breves. Nunca afirmes que se imprimió.`;
 export async function generateForgeSource(body,env,{signal,fetcher=fetch}={}){
  if(!env.OPENAI_API_KEY)throw fail('Falta OPENAI_API_KEY. Podés abrir la muestra sin IA.',503,'missing_key');
- const schema={type:'object',properties:{scad:{type:'string'},description:{type:'string'},assumptions:{type:'array',items:{type:'string'}},caveats:{type:'array',items:{type:'string'}}},required:['scad','description','assumptions','caveats'],additionalProperties:false};
+ const finish={type:'object',properties:{texture:{type:'string',enum:forgeTextures},smooth:{type:'number'},depth_mm:{type:'number'},scale_mm:{type:'number'}},required:['texture','smooth','depth_mm','scale_mm'],additionalProperties:false};
+ const schema={type:'object',properties:{scad:{type:'string'},finish,description:{type:'string'},assumptions:{type:'array',items:{type:'string'}},caveats:{type:'array',items:{type:'string'}}},required:['scad','finish','description','assumptions','caveats'],additionalProperties:false};
  const instructions=forgeInstructions;
  let response;
- try{response=await fetcher('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:'Bearer '+env.OPENAI_API_KEY,'Content-Type':'application/json'},signal:AbortSignal.any([AbortSignal.timeout(200000),...(signal?[signal]:[])]),body:JSON.stringify({model:forgeModel(env),store:false,max_output_tokens:32000,...(/^(gpt-5|gpt-6|o\d)/.test(forgeModel(env))?{reasoning:{effort:env.OPENAI_FORGE_EFFORT||'medium'}}:{}),instructions,input:[...body.history,{role:'user',content:JSON.stringify({pedido:body.prompt,fuenteAnterior:body.previous||null})}],text:{format:{type:'json_schema',name:'alfred_forge',strict:true,schema}}})});}
+ try{response=await fetcher('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:'Bearer '+env.OPENAI_API_KEY,'Content-Type':'application/json'},signal:AbortSignal.any([AbortSignal.timeout(200000),...(signal?[signal]:[])]),body:JSON.stringify({model:forgeModel(env),store:false,max_output_tokens:32000,...(/^(gpt-5|gpt-6|o\d)/.test(forgeModel(env))?{reasoning:{effort:env.OPENAI_FORGE_EFFORT||'medium'}}:{}),instructions,input:[...body.history,{role:'user',content:JSON.stringify({pedido:body.prompt,fuenteAnterior:body.previous||null,acabadoAnterior:body.previousFinish?{texture:body.previousFinish.texture,smooth:body.previousFinish.smooth,depth_mm:body.previousFinish.depth,scale_mm:body.previousFinish.scale}:null})}],text:{format:{type:'json_schema',name:'alfred_forge',strict:true,schema}}})});}
  catch(e){if(signal?.aborted)throw fail('Generación detenida.',499,'canceled');throw fail('No se pudo contactar a OpenAI o se agotó el tiempo. Tu pieza sigue como estaba.',502,'ai_unavailable');}
  let data;try{data=await response.json();}catch{throw fail('OpenAI devolvió una respuesta incompleta.',502,'ai_response');}
  if(!response.ok){const quota=data.error?.code==='insufficient_quota';throw fail(quota?'La API no tiene créditos disponibles. Revisá la facturación de OpenAI.':response.status===401?'OpenAI no aceptó la clave configurada.':response.status===429?'OpenAI alcanzó su límite. Esperá y volvé a intentar.':'OpenAI no pudo completar el pedido. Probá nuevamente.',502,'ai_error');}
@@ -118,7 +133,7 @@ export async function generateForgeSource(body,env,{signal,fetcher=fetch}={}){
  try{result=JSON.parse(data.output?.flatMap(o=>o.content||[]).find(c=>c.type==='output_text')?.text);}catch{throw fail('OpenAI no devolvió un programa completo.',502,'ai_response');}
  try{validateSource(result?.scad);}catch{throw fail('OpenAI propuso una fuente inválida o con referencias externas.',502,'ai_response');}
  if(typeof result.description!=='string'||result.description.length>2000||!['assumptions','caveats'].every(k=>Array.isArray(result[k])&&result[k].length<=20&&result[k].every(v=>typeof v==='string'&&v.length<=1000)))throw fail('Las notas de la propuesta son inválidas.',502,'ai_response');
- return {scad:result.scad,description:result.description,assumptions:result.assumptions,caveats:result.caveats};
+ return {scad:result.scad,finish:finishFromModel(result.finish),description:result.description,assumptions:result.assumptions,caveats:result.caveats};
 }
 // Errores de compilación que vale la pena corregir solos una vez, con la causa concreta.
 export const retryable=code=>['compile_failed','compile_size','compile_limit','compile_timeout','compile_output_limit'].includes(code);

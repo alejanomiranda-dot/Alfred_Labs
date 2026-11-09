@@ -43,3 +43,16 @@ test('las partes se ordenan por tamaño y se pueden quitar las chicas',()=>{
  const parts=partsOf(mesh);assert.equal(parts.length,2);assert.ok(parts[0].area>parts[1].area*50);assert.deepEqual(parts[1].min.map(Math.round),[20,0,0]);
  assert.equal(countParts(keepParts(mesh,[parts[0]])),1);
 });
+test('un hueco cerrado no es una parte suelta; una bolita dentro del hueco sí',()=>{
+ const shell=[node('ellipsoid',{size:[60,60,60],position:[0,0,30]}),node('ellipsoid',{size:[50,50,50],position:[0,0,30]}),node('subtract',{inputs:[0,1]})];
+ const hollow=free(shell);
+ assert.equal(countParts(hollow.combined),1);
+ assert.ok(!hollow.warnings.some(w=>/volúmenes separados/.test(w)));
+ assert.ok(!reviewPrint(hollow.combined,hollow.volume).issues.some(i=>i.kind==='parts'));
+ // Quitar partes chicas conserva el hueco: la parte principal lleva también su superficie interior.
+ const [main]=partsOf(hollow.combined);
+ assert.equal(main.triangles.length,hollow.combined.triangles.length/3);
+ const rattle=free([...shell,node('ellipsoid',{size:[10,10,10],position:[0,0,30]}),node('union',{inputs:[2,3]})]);
+ assert.equal(countParts(rattle.combined),2);
+ assert.ok(rattle.warnings.some(w=>/2 volúmenes separados/.test(w)));
+});
