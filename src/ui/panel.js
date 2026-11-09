@@ -128,13 +128,13 @@ function forgeControls(p,ctx){
  const archive=p.forge,selected=archive.revisions.find(r=>r.id===archive.selected);
  const select=el('select',{});for(const [i,r] of archive.revisions.entries()){const o=el('option',{value:r.id,textContent:(i+1)+'. '+r.prompt.slice(0,48)});o.selected=r.id===archive.selected;select.append(o);}
  const rebuild=el('button',{type:'button',className:'secondary',textContent:'Ver esta versión'});rebuild.onclick=()=>ctx.forgeVersion(select.value);
- const source=el('button',{type:'button',className:'secondary',textContent:'Descargar fuente .scad'});source.onclick=()=>ctx.forgeSource(select.value);
+ const source=el('button',{type:'button',className:'secondary',textContent:selected?.sculpt?'Descargar figura .json':'Descargar fuente .scad'});source.onclick=()=>ctx.forgeSource(select.value);
  const notes=[...(selected?.assumptions||[]),...(selected?.caveats||[])];
  const summary=(selected?.description||'Pieza generada por Alfred.').split(/(?<=\.)\s/)[0];
  return [
   group('Pieza generada',el('p',{className:'note',textContent:summary}),el('p',{className:'note',textContent:'Para cambiarla, pedíselo a Alfred: «más alta», «sin cola», «orejas más grandes».'})),
   p.kind==='free'&&p.freeDesign?finishControls(p,ctx):null,
-  group(null,el('details',{},el('summary',{textContent:'Avanzado · versiones, notas y fuente'}),el('label',{},'Versión',select),el('div',{className:'library-actions'},rebuild,source),notes.length?el('ul',{className:'note'},...notes.map(t=>el('li',{textContent:t}))):null,el('pre',{className:'forge-code',textContent:selected?.scad||''})))
+  group(null,el('details',{},el('summary',{textContent:'Avanzado · versiones, notas y fuente'}),el('label',{},'Versión',select),el('div',{className:'library-actions'},rebuild,source),notes.length?el('ul',{className:'note'},...notes.map(t=>el('li',{textContent:t}))):null,el('pre',{className:'forge-code',textContent:selected?.scad||(selected?.sculpt?selected.sculpt.parts.map(x=>x.name||x.shape).join(' · '):'')})))
  ];
 }
 

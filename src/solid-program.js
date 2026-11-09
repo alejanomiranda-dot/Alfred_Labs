@@ -1,6 +1,7 @@
 // Declarative CAD. Data only: no eval, scripts, imports, filesystem or network.
 import {shapeSection,fontNames,iconNames,missingGlyph,fontOf} from './shapes.js';
 import {applyFinish,finishTextures} from './finish.js';
+import {sculptColorZones} from './sculpt.js';
 export const nodeTypes=['imported','box','open_box','cylinder','open_cylinder','revolve','sphere','ellipsoid','capsule','torus','extrude','text','engrave_text','emboss_text','union','subtract','intersect','finish'];
 export const faces=['top','bottom','front','back','left','right','around'];
 const faceTypes=['engrave_text','emboss_text'];
@@ -205,6 +206,8 @@ export function buildSolidProgram(api,program,params){
    if(n.type==='finish')solid=finishedSolid(api,own,solids[n.inputs[0]],n,params?.importedMesh,program.nodes.slice(0,i+1));
    if(region){regions.push({color:n.color.toLowerCase(),solid:region});contains[i].add(regions.length-1);}
    // Un relieve en colores reclama, para cada color, lo que sobresale de la placa dentro de su contorno.
+   // Una figura esculpida en colores: cada color reclama su zona de la figura (y del acabado, que viene después).
+   if(n.type==='imported'&&!params?.importedColors){const r=params?.forge?.revisions.find(x=>x.id===params.forge.selected);if(r?.sculpt)for(const zone of sculptColorZones(api,r.sculpt,own)){regions.push(zone);contains[i].add(regions.length-1);}}
    if(n.type==='imported'&&params?.importedColors)for(const layer of params.importedColors.layers){const zone=own(own(own(new C(layer.polygons,'EvenOdd')).extrude(1000)).translate([0,0,params.importedColors.zFrom]));regions.push({color:layer.color,solid:zone});contains[i].add(regions.length-1);}
    solid=own(own(solid.rotate(n.rotation)).translate(n.position));
    if(n.rotation.some(Boolean)||n.position.some(Boolean))for(const r of contains[i])regions[r].solid=own(own(regions[r].solid.rotate(n.rotation)).translate(n.position));

@@ -16,7 +16,9 @@ import {readKeychainLogo,keychainUrl,isTwoSidedKeychain} from '../keychain.js';
 import {readQrImage} from '../qr-image.js';
 import {reliefFromImage,generatedParams} from '../relief.js';
 import {validateGeneration} from '../generation-spec.js';
-import {revisionFromResult,prepareForgeProposal,appendForgeRevision,finishOf} from '../forge-project.js';
+import {revisionFromResult,prepareForgeProposal,appendForgeRevision,finishOf,isSculpt} from '../forge-project.js';
+import {buildSculpt} from '../sculpt.js';
+import {sculptPalette} from '../../shared/sculpt-schema.js';
 import {hasFinish} from '../finish.js';
 import {openPhotoMeasure} from '../photo-measure.js';
 import {openSparePart} from '../spare-part.js';
@@ -219,7 +221,7 @@ async function keychainFlow(prompt,attachment,epoch){
 async function assistantFlow(prompt,attachment,epoch){
  if(!S.assistantReady){addMessage('assistant','El asistente con IA no está disponible en este servidor. Podés abrir un proyecto, importar un STL o armar un llavero con logo y QR.');return;}
  const base=S.params,params=Object.fromEntries(assistantFields.filter(k=>k in base).map(k=>[k,base[k]]));
- const currentEngine=!hasPiece()?'none':base.forge?'forge':base.sourceInfo?'relief':base.kind==='keychain'?'keychain':base.kind==='free'?'cad':'template';
+ const currentEngine=!hasPiece()?'none':base.forge?(isSculpt(base.forge)?'sculpt':'forge'):base.sourceInfo?'relief':base.kind==='keychain'?'keychain':base.kind==='free'?'cad':'template';
  const body={prompt,currentEngine,style:S.settings,params,history:recentHistory().slice(0,-1),
   ...(attachment?{imageDataUrl:attachment.dataUrl}:{}),
   ...(base.sourceInfo?{pendingGeneration:base.sourceInfo}:{}),
@@ -231,6 +233,7 @@ async function assistantFlow(prompt,attachment,epoch){
   if(S.params!==base)throw Error('Cambiaste la pieza mientras pensaba. Volvé a enviar el pedido para incluir esos cambios.');
   if(result.route==='relief')return reliefFlow(result,attachment,epoch);
   if(result.route==='forge'){addMessage('assistant',result.message);return forgeFlow('generate',result.forgePrompt,epoch,undefined,result.expectedSize,{title:prompt});}
+  if(result.route==='sculpt'){addMessage('assistant',result.message);return sculptFlow('generate',result.forgePrompt,epoch,{expected:result.expectedSize,attachment,title:prompt});}
   if(result.route==='keychain'){const url=result.params?.qrText&&result.params.qrText!==defaults.qrText?findUrl(result.params.qrText):null;if(url)(S.keychainDraft||(S.keychainDraft={})).qrText=url;return keychainFlow(prompt,attachment,epoch);}
   if(!result.canApply){addMessage('assistant',result.message);return;}
   try{checked=checkProposal(S.api,base,result);break;}catch(e){correction={error:e.message.slice(0,1500),program:result.params.freeDesign??null};}
@@ -337,19 +340,58 @@ async function forgeFlow(action,prompt,epoch,scad,expected=null,{polish=true,not
  if(action==='example')addMessage('assistant',revision.description);
  else if(review.problems.length)addMessage('assistant','Ojo: la pieza '+review.problems[0].split(':')[0]+'. Pedime que lo ajuste o mirá «Tu pieza».');
  apply(checked.candidate,checked.built,action==='compile'?'Versión recuperada':note);
- if(action==='generate'&&polish)await polishShape(prompt,epoch,expected);
+ if(action==='generate'&&polish)await polishShape(prompt,epoch,fixes=>forgeFlow('generate','Mejorá la forma de la versión anterior: '+fixes,epoch,undefined,expected,{polish:false,note:'Forma pulida'}));
+}
+// Figuras orgánicas: OpenAI describe piezas suaves que se funden y el navegador arma un solo sólido cerrado,
+// con base plana y a la medida pedida. No necesita OpenSCAD. Pasa por los mismos controles, el acabado y la revisión visual.
+async function sculptFlow(action,prompt,epoch,{expected=null,attachment=null,polish=true,note='Figura generada',title=prompt}={}){
+ const archive=S.params.forge,previous=archive?.revisions.find(r=>r.id===archive.selected),before=previous?.sculpt?S.model?.dimensions:null;
+ let result;
+ if(action==='compile')result={...previous};
+ else{
+  setBusy(true,'Esculpiendo la figura… puede tardar un par de minutos.');
+  result=await post('/api/assistant',{action:'sculpt',prompt,history:recentHistory().slice(-8).map(m=>({...m,content:m.content.slice(0,2000)})),
+   ...(previous?.sculpt?{previous:previous.sculpt,previousFinish:finishOf(S.params.freeDesign)}:{}),
+   ...(expected?{expectedSize:expected}:{}),...(attachment?{imageDataUrl:attachment.dataUrl}:{})},200000);check(epoch);
+ }
+ // Medida final: la pedida; si no, la de la versión anterior (un cambio no la achica ni la agranda); si no, 80 mm de alto.
+ const target=action==='compile'?result.sculpt.target||null:expected?.some(v=>v>0)?expected:before?[0,0,Math.round(before[2]*10)/10]:null;
+ const sized=r=>({...r.sculpt,...(target?{target}:{})});
+ setBusy(true,'Armando la figura en 3D…');await tick();check(epoch);
+ let mesh=buildSculpt(S.api,sized(result),{name:shortName(title)});check(epoch);
+ // Una pieza que se ve (ala, cola, pata) y quedó suelta se pide pegar una vez, en vez de perderla sin avisar.
+ const lost=[...new Set(mesh.loose.filter(l=>l.share>.005).map(l=>l.name))];
+ if(action==='generate'&&lost.length){
+  setBusy(true,'Pegando partes que quedaron sueltas…');
+  try{
+   const fixed=await post('/api/assistant',{action:'sculpt',prompt:'Estas piezas quedaron separadas del resto de la figura y se perderían al imprimir: '+lost.join(', ')+'. Movelas o agrandalas para que entren al menos 2 mm dentro de su vecina (el cuerpo, la cabeza o la base). No cambies nada más.',history:[],previous:result.sculpt,previousFinish:result.finish},200000);check(epoch);
+   const again=buildSculpt(S.api,sized(fixed),{name:shortName(title)}),share=m=>m.loose.reduce((a,l)=>a+l.share,0);check(epoch);
+   if(share(again)<share(mesh)){result={...fixed,description:result.description,assumptions:result.assumptions};mesh=again;}
+  }catch(e){if(e instanceof Stale)throw e;}
+ }
+ const revision=action==='compile'?previous:revisionFromResult({...result,sculpt:{...sized(result),placement:mesh.placement}},prompt);
+ const nextArchive=action==='compile'?archive:appendForgeRevision(archive,revision);
+ const base=action==='generate'&&!S.params.forge?{...S.params,project:shortName(title),keepProject:true}:S.params;
+ const checked=prepareForgeProposal(S.api,base,{mesh},nextArchive);
+ const review=forgeProblems(checked,target);
+ S.relief=null;
+ for(const text of mesh.notes)addMessage('assistant',text);
+ if(action!=='compile'&&sculptPalette(revision.sculpt)?.merged)addMessage('assistant','La figura pedía más de 4 colores: uní los más parecidos para que entre en los 4 carretes del AMS.');
+ if(review.problems.length)addMessage('assistant','Ojo: la figura '+review.problems[0].split(':')[0]+'. Pedime que lo ajuste o mirá «Tu pieza».');
+ apply(checked.candidate,checked.built,action==='compile'?'Versión recuperada':note);
+ if(action==='generate'&&polish)await polishShape(prompt,epoch,fixes=>sculptFlow('generate','Mejorá la forma de la versión anterior: '+fixes,epoch,{expected:target,polish:false,note:'Forma pulida',title}));
 }
 // Revisión visual: Alfred mira la pieza desde tres lados; si no se reconoce bien lo pedido, la pule una vez.
 async function critique(subject,epoch){
  try{const images=viewer.snapshots();if(!images.length)return null;const r=await post('/api/assistant',{action:'critique',subject,images},120000);check(epoch);return typeof r?.score==='number'?r:null;}
  catch(e){if(e instanceof Stale)throw e;return null;}
 }
-async function polishShape(prompt,epoch,expected){
+async function polishShape(prompt,epoch,regenerate){
  setBusy(true,'Mirando cómo quedó…');await tick();
  const first=await critique(prompt,epoch);
  if(!first||first.score>=8||!first.fixes)return;
  setBusy(true,'Puliendo la forma para que se reconozca mejor…');
- try{await forgeFlow('generate','Mejorá la forma de la versión anterior: '+first.fixes,epoch,undefined,expected,{polish:false,note:'Forma pulida'});}
+ try{await regenerate(first.fixes);}
  catch(e){if(e instanceof Stale)throw e;return;}
  setBusy(true,'Comparando con la versión anterior…');await tick();
  const second=await critique(prompt,epoch);
@@ -360,9 +402,9 @@ async function forgeVersion(id){
  const archive=S.params.forge,revision=archive?.revisions.find(r=>r.id===id);if(!revision||S.busy)return;
  const epoch=S.epoch;S.controller=new AbortController();
  const before=S.params;S.params={...S.params,forge:{...archive,selected:id}};
- try{await forgeFlow('compile','',epoch,revision.scad);}catch(e){if(!(e instanceof Stale)){S.params=before;toast(e.message);}}finally{if(epoch===S.epoch)setBusy(false);}
+ try{await (revision.sculpt?sculptFlow('compile','',epoch):forgeFlow('compile','',epoch,revision.scad));}catch(e){if(!(e instanceof Stale)){S.params=before;toast(e.message);}}finally{if(epoch===S.epoch)setBusy(false);}
 }
-function forgeSource(id){const r=S.params.forge?.revisions.find(x=>x.id===id);if(r)download(r.scad,'alfred-'+r.id.slice(0,8)+'.scad','text/plain');}
+function forgeSource(id){const r=S.params.forge?.revisions.find(x=>x.id===id);if(!r)return;if(r.sculpt)download(JSON.stringify(r.sculpt,null,1),'alfred-figura-'+r.id.slice(0,8)+'.json','application/json');else download(r.scad,'alfred-'+r.id.slice(0,8)+'.scad','text/plain');}
 
 $('stopAssistant').onclick=()=>S.controller?.abort();
 
