@@ -10,3 +10,10 @@ export function projectFromBytes(name,bytes){
  }else text=new TextDecoder().decode(bytes);
  try{return JSON.parse(text);}catch{throw Error('El archivo no contiene un proyecto válido de Alfred.');}
 }
+
+// A 3MF exported by Alfred carries its project: opening it as a plain 3D file would lose the parts and colors.
+// Returns the saved project, or null when the file is not an Alfred 3MF (an STL or another program's 3MF).
+export function savedProjectIn(name,bytes){
+ if(!/\.3mf$/i.test(name)||bytes.length>80e6)return null;
+ try{return projectFromBytes(name,bytes);}catch{return null;}
+}

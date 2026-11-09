@@ -4,10 +4,13 @@ import assert from 'node:assert/strict';
 import Module from 'manifold-3d';
 import {unzipSync,strFromU8} from 'fflate';
 import {defaults,validate,buildModel} from '../src/model.js';
-import {traceColorLogo,keychainUrl,validateKeychain} from '../src/keychain.js';
+import {traceColorLogo,keychainUrl,validateKeychain,keychainColors,keychainLogoNotes,colorName,planKeychainColorChange,parseKeychainColorRequest,recolorKeychain} from '../src/keychain.js';
+import {contourField,blurField,ringArea} from '../src/trace.js';
 import {isTwoSidedKeychain} from '../src/keychain.js';
 import {threeMfBytes} from '../src/export.js';
-import {projectFromBytes} from '../src/project-file.js';
+import {projectFromBytes,savedProjectIn} from '../src/project-file.js';
+import {stlBytes} from '../src/export.js';
+import {zipSync,strToU8} from 'fflate';
 const api=await Module();api.setup();
 const url='https://mutualunir.com/';
 function logo(){
@@ -22,7 +25,7 @@ function closed(mesh){
 
 test('llavero de dos caras: logo real por regiones, dorso plano, sólido y hasta cuatro colores',()=>{
  const model=buildModel(api,params());assert.deepEqual(model.dimensions,[50,60,3.8000000000000003]);closed(model.combined);model.parts.forEach(p=>closed(p.mesh));
- assert.ok(model.parts.length<=4);assert.equal(model.qr.face,'back');assert.ok(model.qr.module>=.8);assert.ok(model.volume>0);
+ assert.ok(new Set(model.parts.map(p=>p.color)).size<=4,'Hasta 4 filamentos');assert.equal(model.qr.face,'back');assert.ok(model.qr.module>=.8);assert.ok(model.volume>0);
  const partsVolume=model.parts.reduce((sum,part)=>{const raw=new api.Mesh({numProp:part.mesh.numProp,vertProperties:part.mesh.positions,triVerts:part.mesh.triangles}),solid=new api.Manifold(raw);const volume=solid.volume();solid.delete();return sum+volume;},0);
  assert.ok(Math.abs(partsVolume-model.volume)<.001,'Los colores no se solapan y completan la pieza');
  assert.equal(qrFromExport(threeMfBytes(model),model.qr.size),url,'El QR exportado se lee desde el dorso, sin espejo');
@@ -49,10 +52,113 @@ test('se rechazan enlaces inseguros, logos inválidos y QR demasiado fino',()=>{
 
 test('logo monocromo con fondo transparente conserva una figura rectangular y sus huecos',()=>{
  const data=new Uint8ClampedArray(32*32*4);for(let i=0;i<32*32;i++)data.set([30,30,30,255],i*4);
- const config=traceColorLogo(data,32,32,'Cuadrado');assert.equal(config.layers.length,1);assert.deepEqual(config.layers[0].polygons[0],[[0,0],[32,0],[32,32],[0,32]]);
+ const config=traceColorLogo(data,32,32,'Cuadrado');assert.equal(config.layers.length,1);assert.equal(config.layers[0].polygons.length,1);
+ // The outline follows the square to within a fraction of a pixel; only the corners are softened.
+ const square=config.layers[0].polygons[0],xs=square.map(p=>p[0]),ys=square.map(p=>p[1]);
+ assert.ok(Math.max(...xs)-Math.min(...xs)>31.5&&Math.max(...xs)-Math.min(...xs)<32.5);assert.ok(Math.max(...ys)-Math.min(...ys)>31.5&&Math.max(...ys)-Math.min(...ys)<32.5);
+ assert.ok(square.length<=16,'Lados rectos con pocos vértices');
 });
 
 test('el pedido de logo y QR va al creador directo, sin confundirlo con un relieve visual',()=>{
  assert.ok(isTwoSidedKeychain('Quiero un llavero con el logo de UNIR adelante y QR en el dorso'));
  assert.equal(isTwoSidedKeychain('Quiero una galaxia en relieve'),false);assert.equal(isTwoSidedKeychain('Un llavero solo con QR'),false);
+});
+
+// Logo with a three-color mark and a gray name underneath, like «Mutual UNIR».
+function brandLogo(){
+ const size=160,data=new Uint8ClampedArray(size*size*4);
+ for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+  const d=Math.hypot(x+.5-80,y+.5-62);let rgb=null;
+  if(d<50)rgb=x<80?[149,65,141]:y<62?[206,106,182]:[250,158,75];
+  else if(y>=128&&y<146&&x>=20&&x<140&&(x-20)%20<16)rgb=[97,97,97];
+  if(rgb)data.set([...rgb,255],(y*size+x)*4);
+ }
+ return traceColorLogo(data,size,size,'Marca con nombre');
+}
+const brandParams=()=>validate({...params(),keychain:brandLogo(),qrText:'https://www.mutualunir.com.ar/'});
+const modelXml=model=>strFromU8(unzipSync(threeMfBytes(model))['3D/3dmodel.model']);
+
+test('los contornos del logo son suaves, sin escalones de píxel, también en el 3MF exportado',()=>{
+ const W=64,field=new Float32Array(W*W);
+ for(let y=0;y<W;y++)for(let x=0;x<W;x++){const d=Math.hypot(x+.5-32,y+.5-32);field[y*W+x]=d<20&&d>8?1:0;}
+ const rings=contourField(blurField(field,W,W),W,W);assert.equal(rings.length,2,'Borde exterior y agujero');
+ for(const [ring,radius] of [[rings.find(r=>Math.abs(ringArea(r))>800),20],[rings.find(r=>Math.abs(ringArea(r))<800),8]]){
+  const radii=ring.map(([x,y])=>Math.hypot(x-32,y-32));assert.ok(radii.every(r=>Math.abs(r-radius)<.3),'Sigue el círculo a menos de 0,3 px');
+ }
+ // A disk logo exported to 3MF: the top face of the relief follows the circle instead of a pixel staircase.
+ const size=128,data=new Uint8ClampedArray(size*size*4);
+ for(let y=0;y<size;y++)for(let x=0;x<size;x++)if(Math.hypot(x+.5-64,y+.5-64)<50)data.set([40,40,40,255],(y*size+x)*4);
+ const logo=traceColorLogo(data,size,size,'Disco'),model=buildModel(api,{...params(),keychain:logo}),scale=Math.min(40/logo.width,45/logo.height);
+ const xml=modelXml(model),object=[...xml.matchAll(/<object id="\d+" type="model" name="([^"]+)" pid="1" pindex="\d+"><mesh><vertices>(.*?)<\/vertices>/gs)].find(m=>m[1].startsWith('Logo'));
+ const top=[...object[2].matchAll(/<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"\/>/g)].map(m=>m.slice(1).map(Number)).filter(v=>Math.abs(v[2]-3.8)<1e-4);
+ const cx=(Math.max(...top.map(v=>v[0]))+Math.min(...top.map(v=>v[0])))/2,cy=(Math.max(...top.map(v=>v[1]))+Math.min(...top.map(v=>v[1])))/2;
+ const deviation=Math.max(...top.map(([x,y])=>Math.abs(Math.hypot(x-cx,y-cy)-50*scale)));
+ assert.ok(top.length>=24,'El borde tiene suficientes vértices para ser curvo');
+ assert.ok(deviation<.4*scale,'El borde exportado se aparta menos de 0,4 px del círculo (un escalón de píxel se aparta hasta 0,7): '+(deviation/scale).toFixed(2)+' px');
+});
+
+test('el nombre debajo de la marca queda como parte aparte y se avisa si tomó prestado un color',()=>{
+ const logo=brandLogo(),text=logo.layers.filter(l=>l.region==='texto');
+ assert.equal(text.length,1);assert.equal(colorName(text[0].source),'gris oscuro');assert.equal(text[0].color,logo.layers.find(l=>l.region==='marca'&&colorName(l.color)==='violeta').color);
+ assert.equal(keychainColors(logo).length,3);assert.match(keychainLogoNotes(logo),/gris oscuro.*violeta.*nombre en negro/);
+ const model=buildModel(api,brandParams()),names=model.parts.map(p=>p.name);
+ assert.ok(names.includes('Texto del logo · violeta')&&names.includes('QR del dorso · violeta'),names.join(', '));
+ assert.ok(new Set(model.parts.map(p=>p.color)).size<=4);
+});
+
+test('«el nombre en negro» pinta solo el texto, conserva 4 filamentos y el texto sigue aparte en el 3MF',()=>{
+ const first='Necesito que el nombre "Mutual Unir" sea en negro o al menos despues pueda cambiarle el color desde el software de bambu labs',second='El nombre "Mutual UNIR" lo veo violeta, no negro';
+ for(const prompt of [first,second]){
+  const base=brandParams(),plan=planKeychainColorChange(base,prompt);
+  assert.match(plan.message,/^Listo: el nombre queda en negro\./);assert.match(plan.message,/4 filamentos/);assert.match(plan.message,/Bambu Studio/);
+  const next=validate({...base,...plan.patch}),model=buildModel(api,next),text=model.parts.find(p=>p.region==='texto');
+  assert.equal(text.name,'Texto del logo · negro');assert.equal(colorName(text.color),'negro');
+  assert.ok(model.parts.filter(p=>p.region==='marca').every(p=>colorName(p.color)!=='negro'),'La marca no se pinta de negro');
+  assert.ok(new Set(model.parts.map(p=>p.color)).size<=4,'Hasta 4 filamentos con la base');
+  assert.match(modelXml(model),/<base name="Texto del logo · negro" displaycolor="#1B1B1BFF"\/>/);
+  assert.equal(qrFromExport(threeMfBytes(model),model.qr.size),'https://www.mutualunir.com.ar/','El QR negro se sigue leyendo');
+  // Asking again does not repeat the same change: it says it is already done.
+  assert.match(planKeychainColorChange(next,second).message,/^El nombre ya está en negro\. Si lo seguís viendo violeta, descargá el 3MF de nuevo/);
+ }
+});
+
+test('los pedidos de color se entienden sin confundir el color actual con el pedido',()=>{
+ const logo=brandLogo();
+ assert.deepEqual(['region','colorName'].map(k=>parseKeychainColorRequest('El nombre lo veo violeta, no negro',logo)[k]),['texto','negro']);
+ assert.deepEqual(['region','colorName'].map(k=>parseKeychainColorRequest('quiero la marca en azul, no violeta',logo)[k]),['marca','azul']);
+ assert.equal(parseKeychainColorRequest('hacelo de 40 mm de ancho',logo),null);
+ assert.equal(parseKeychainColorRequest('¿lo puedo cambiar de color en Bambu Studio?',logo).bambu,true);
+ const base=brandParams();
+ assert.equal(planKeychainColorChange(base,'¿lo puedo cambiar de color en Bambu Studio?').patch,undefined);
+ assert.match(planKeychainColorChange(base,'la base en negro').message,/tiene que ser clara/);
+ // A keychain traced before the name was split asks for the logo again instead of pretending.
+ const old={...base,keychain:{...base.keychain,layers:base.keychain.layers.map(({region,source,...layer})=>layer)}};
+ const plan=planKeychainColorChange(old,'el nombre en negro');assert.equal(plan.patch,undefined);assert.match(plan.message,/Volvé a adjuntar el logo/);
+});
+
+test('«Colores del archivo» recolorea una parte y une colores si pasaría de 4 filamentos',()=>{
+ const logo=brandLogo(),orange=logo.layers.find(l=>colorName(l.color)==='naranja').color;
+ const same=recolorKeychain(logo,{region:'marca',from:orange,color:'#2e9d4f'});assert.equal(same.merged,null);assert.equal(keychainColors(same.config).length,3);
+ const black=recolorKeychain(logo,{region:'texto',color:'#1b1b1b'});assert.ok(black.merged);assert.equal(keychainColors(black.config).length,3);
+ assert.ok(black.config.layers.filter(l=>l.region==='texto').every(l=>l.color==='#1b1b1b'&&l.source));
+ assert.throws(()=>validateKeychain({...logo,layers:[...logo.layers,{color:'#00ff00',polygons:logo.layers[0].polygons,region:'marca'}]}),/4 filamentos/);
+});
+
+test('el pedido real con error de tipeo pinta solo el nombre, y si no dice qué parte pregunta en vez de pintar todo',()=>{
+ const base=brandParams(),typo=planKeychainColorChange(base,'Necesito que el nomreb "Mutual Unir" sea en negro o al menos despues pueda cambiarle el color desde el software de bambu labs');
+ assert.match(typo.message,/^Listo: el nombre queda en negro\./);
+ assert.ok(typo.patch.keychain.layers.filter(l=>l.region==='marca').every(l=>colorName(l.color)!=='negro'));
+ assert.equal(parseKeychainColorRequest('"Mutual UNIR" en negro',base.keychain).region,'texto');
+ const unclear=planKeychainColorChange(base,'ponelo en negro');assert.equal(unclear.patch,undefined);assert.match(unclear.message,/^¿Qué parte querés en negro\?/);
+ const all=planKeychainColorChange(base,'todo el logo en negro');assert.ok(all.patch.keychain.layers.every(l=>l.color==='#1b1b1b'));
+ assert.equal(parseKeychainColorRequest('la figura de debajo en azul',base.keychain).region,'marca');
+});
+
+test('un 3MF guardado por Alfred abierto como archivo 3D vuelve como proyecto, con sus partes y colores',()=>{
+ const base=brandParams(),plan=planKeychainColorChange(base,'el nombre en negro'),model=buildModel(api,validate({...base,...plan.patch})),bytes=threeMfBytes(model);
+ const saved=savedProjectIn('Llavero-LOGO-SIN-FONDO-1.3mf',bytes);assert.ok(saved,'Se reconoce el proyecto dentro del 3MF');
+ const again=buildModel(api,validate(saved));
+ assert.deepEqual(again.parts.map(p=>[p.name,p.color]),model.parts.map(p=>[p.name,p.color]),'Mismas partes y colores, el texto sigue en negro');
+ assert.equal(savedProjectIn('pieza.stl',stlBytes(model.combined)),null,'Un STL se importa como forma');
+ assert.equal(savedProjectIn('otro.3mf',zipSync({'3D/3dmodel.model':strToU8('<model/>')})),null,'Un 3MF de otro programa se importa como forma');
 });

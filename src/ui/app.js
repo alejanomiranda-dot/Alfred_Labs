@@ -11,8 +11,8 @@ import {saveVersion,listProjects,deleteProject,countProjects,migrateLegacy,prune
 import {thumbnail} from '../studio-output.js';
 import {readMeshFile} from '../mesh-import.js';
 import {prepareImport,describeImport} from '../solid-program.js';
-import {projectFromBytes} from '../project-file.js';
-import {readKeychainLogo,keychainUrl,isTwoSidedKeychain} from '../keychain.js';
+import {projectFromBytes,savedProjectIn} from '../project-file.js';
+import {readKeychainLogo,keychainUrl,isTwoSidedKeychain,planKeychainColorChange,recolorKeychain,keychainLogoNotes,colorName} from '../keychain.js';
 import {readQrImage} from '../qr-image.js';
 import {reliefFromImage,generatedParams} from '../relief.js';
 import {validateGeneration} from '../generation-spec.js';
@@ -125,8 +125,13 @@ $('project').addEventListener('change',()=>{S.params={...S.params,project:$('pro
 // ---------- Panel «Tu pieza» y revisión ----------
 function renderPiecePanel(){
  if(!hasPiece()||!S.model){$('pieceControls').replaceChildren();return;}
- renderPanel($('pieceControls'),{params:S.params,model:S.model,update,editProgram,replaceLogo:()=>{S.imageTarget='logo';$('imageFile').click();},
+ renderPanel($('pieceControls'),{params:S.params,model:S.model,update,editProgram,replaceLogo:()=>{S.imageTarget='logo';$('imageFile').click();},recolorLogo,
   canRebuildRelief:!!S.relief&&!!S.params.sourceInfo,reliefInverted:!!S.relief?.invert,rebuildRelief,forgeVersion,forgeSource});
+}
+// «Colores del archivo»: pinta una parte del logo; si suma un cuarto color, se unen los dos más parecidos.
+function recolorLogo(region,from,color){
+ try{const {config,merged}=recolorKeychain(S.params.keychain,{region,from,color});update({keychain:config},{rerender:true});if(merged)toast('Para no pasar de 4 filamentos, el '+colorName(merged.from)+' pasó a '+colorName(merged.to)+'.');}
+ catch(e){toast(e.message);}
 }
 function editProgram(program){try{const built=build(validate({...S.params,freeDesign:program}));pushHistory();markDirty();refresh({keepView:true,panel:false,built});return null;}catch(e){return e.message;}}
 let reviewTimer;
@@ -177,6 +182,9 @@ async function send(text){
  addMessage('user',prompt,attachment?{image:attachment.preview,imageName:attachment.name}:{});
  const epoch=S.epoch;S.controller=new AbortController();setBusy(true);
  try{
+  // Cambios de color del llavero actual («el nombre en negro»): se resuelven acá, sin rearmarlo ni consultar a la IA.
+  const recolor=!attachment&&hasPiece()&&S.params.kind==='keychain'?planKeychainColorChange(S.params,prompt):null;
+  if(recolor){keychainColorChange(recolor);return;}
   const wantsKeychain=isTwoSidedKeychain(prompt)||(S.pendingIntent==='keychain'&&(attachment||findUrl(prompt)));
   if(!wantsKeychain)S.pendingIntent=null;
   if(wantsKeychain)await keychainFlow(prompt,attachment,epoch);
@@ -193,7 +201,21 @@ function findUrl(text){
  if(!m)return null;try{const raw=m[0].replace(/[.)]+$/,'');return keychainUrl(/^https?:\/\//i.test(raw)?raw:'https://'+raw);}catch{return null;}
 }
 
+function keychainColorChange(plan){
+ S.pendingIntent=null;addMessage('assistant',plan.message);if(!plan.patch)return;
+ const candidate=validate({...S.params,...plan.patch});apply(candidate,build(candidate),plan.note);
+}
+// Pedido sobre un llavero ya armado que la IA mandó por la ruta del llavero: se cambia lo pedido, sin rearmarlo de cero.
+function keychainEdit(result){
+ const base=S.params,patch={},url=result.params?.qrText&&result.params.qrText!==defaults.qrText?findUrl(result.params.qrText):null;
+ if(url&&url!==base.qrText)patch.qrText=url;
+ for(const key of ['width','height'])if(Number.isFinite(result.params?.[key])&&Math.round(result.params[key])!==base[key])patch[key]=Math.round(result.params[key]);
+ const message=typeof result.message==='string'&&result.message.trim()?result.message.trim():'¿Qué querés cambiar del llavero? Puedo cambiar el tamaño, el enlace del QR o los colores del logo («el nombre en negro»).';
+ if(!Object.keys(patch).length){addMessage('assistant',message);return;}
+ const candidate=validate({...base,...patch}),built=build(candidate);addMessage('assistant',message);apply(candidate,built);
+}
 // Llavero logo + QR: se arma en el navegador con el archivo original, sin generar imágenes.
+const colorsOf=built=>new Set(built.parts.slice(1).map(part=>part.color.toLowerCase())).size;
 async function keychainFlow(prompt,attachment,epoch){
  const draft=S.keychainDraft||(S.keychainDraft={});
  S.pendingIntent='keychain';
@@ -214,7 +236,7 @@ async function keychainFlow(prompt,attachment,epoch){
  const name=draft.logo.name.replace(/\.[^.]+$/,'');
  const candidate=validate({...defaults,kind:'keychain',keychain:draft.logo,qrText:draft.qrText,project:('Llavero · '+name).slice(0,60),shape:'round',width:50,height:60,thickness:3.2,relief:.6,hole:4,baseColor:'#ffffff',detailColor:'#30213d',caption:''});
  const built=build(candidate);S.pendingIntent=null;S.keychainDraft=null;S.relief=null;
- addMessage('assistant','Listo: un llavero de 50 × 60 mm con bordes biselados y tu logo completo adelante, en '+(built.parts.length-1)+(built.parts.length-1===1?' color':' colores')+' sobre una base blanca, y el QR al ras del dorso que lleva a '+draft.qrText+'. '+(draft.qrName?'Leí el destino de '+draft.qrName+' y reconstruí sus módulos para imprimirlos con nitidez. ':'')+'Podés cambiar el tamaño o el enlace en «Tu pieza». Revisá los filamentos en Bambu Studio e imprimí una muestra para escanearla.');
+ addMessage('assistant','Listo: un llavero de 50 × 60 mm con bordes biselados y tu logo completo adelante, en '+colorsOf(built)+(colorsOf(built)===1?' color':' colores')+' sobre una base blanca, y el QR al ras del dorso que lleva a '+draft.qrText+'. '+(draft.qrName?'Leí el destino de '+draft.qrName+' y reconstruí sus módulos para imprimirlos con nitidez. ':'')+(keychainLogoNotes(draft.logo)?keychainLogoNotes(draft.logo)+' ':'')+'Podés cambiar el tamaño, el enlace o los colores en «Tu pieza». Revisá los filamentos en Bambu Studio e imprimí una muestra para escanearla.');
  apply(candidate,built,'Llavero con logo y QR');
 }
 
@@ -234,6 +256,7 @@ async function assistantFlow(prompt,attachment,epoch){
   if(result.route==='relief')return reliefFlow(result,attachment,epoch);
   if(result.route==='forge'){addMessage('assistant',result.message);return forgeFlow('generate',result.forgePrompt,epoch,undefined,result.expectedSize,{title:prompt});}
   if(result.route==='sculpt'){addMessage('assistant',result.message);return sculptFlow('generate',result.forgePrompt,epoch,{expected:result.expectedSize,attachment,title:prompt});}
+  if(result.route==='keychain'&&base.kind==='keychain'&&!attachment&&!isTwoSidedKeychain(prompt))return keychainEdit(result);
   if(result.route==='keychain'){const url=result.params?.qrText&&result.params.qrText!==defaults.qrText?findUrl(result.params.qrText):null;if(url)(S.keychainDraft||(S.keychainDraft={})).qrText=url;return keychainFlow(prompt,attachment,epoch);}
   if(!result.canApply){addMessage('assistant',result.message);return;}
   try{checked=checkProposal(S.api,base,result);break;}catch(e){correction={error:e.message.slice(0,1500),program:result.params.freeDesign??null};}
@@ -464,11 +487,17 @@ $('modelFile').onchange=async()=>{
  try{
   if(!S.api)throw Error('El motor 3D todavía se está preparando. Probá en unos segundos.');if(file.size>80e6)throw Error('El archivo supera 80 MB.');
   toast('Leyendo '+file.name+'…');await tick();
-  const read=readMeshFile(file.name,new Uint8Array(await file.arrayBuffer())),prepared=prepareImport(S.api,read);
+  const bytes=new Uint8Array(await file.arrayBuffer()),saved=savedProjectIn(file.name,bytes);let warning='';
+  // A 3MF saved by Alfred opens as the project it is (parts, colors, logo and QR), not as a single-color mesh.
+  if(saved){
+   try{const candidate=validate(saved),built=build(candidate);resetProject(candidate);refresh({built});addMessage('assistant','Abrí tu proyecto «'+candidate.project+'» tal como lo guardaste: '+sizeText(S.model.dimensions)+(S.model.parts?.length>1?', con sus '+S.model.parts.length+' partes y colores':'')+'. Podés seguir cambiándolo.');return;}
+   catch(e){warning='Este 3MF es un proyecto de Alfred, pero no lo pude abrir como proyecto ('+e.message+'). Lo traje solo como forma 3D, de un color. ';}
+  }
+  const read=readMeshFile(file.name,bytes),prepared=prepareImport(S.api,read);
   resetProject({...emptyParams(),project:read.name.slice(0,60)||'Pieza importada',importedMesh:prepared.mesh,freeDesign:{version:1,nodes:[{type:'imported',position:[0,0,0],rotation:[0,0,0]}]}});
   refresh();if(!S.model)throw Error('No se pudo construir una pieza con ese archivo.');
   const notes=[read.parts>1?'Tenía '+read.parts+' partes y las uní en una sola.':'',prepared.tolerance?'La simplifiqué de '+prepared.original.toLocaleString('es-AR')+' a '+prepared.triangles.toLocaleString('es-AR')+' triángulos para trabajar más ágil.':''].filter(Boolean).join(' ');
-  addMessage('assistant','Abrí «'+read.name+'»: mide '+sizeText(S.model.dimensions)+'. '+notes+' ¿Qué le cambiamos? Por ejemplo: grabarle un nombre, agregarle un agujero o recortarla.');
+  addMessage('assistant',warning+'Abrí «'+read.name+'»: mide '+sizeText(S.model.dimensions)+'. '+notes+' ¿Qué le cambiamos? Por ejemplo: grabarle un nombre, agregarle un agujero o recortarla.');
  }catch(e){toast('No se pudo importar: '+e.message);}
 };
 $('importProject').onchange=async()=>{
