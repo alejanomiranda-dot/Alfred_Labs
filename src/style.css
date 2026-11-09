@@ -282,3 +282,4 @@ dialog::backdrop{background:rgba(5,8,12,.45);backdrop-filter:blur(3px)}
  .more .tools{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.library-privacy{margin-top:14px}

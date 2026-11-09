@@ -15,7 +15,8 @@ Se configura una sola vez. Lo único que necesita Alfred es el **ID de cliente**
 4. **Acceso a los datos → Agregar o quitar permisos**. Marcá estos cuatro y guardá:
    - `.../auth/drive.appdata` (ver, crear y borrar sus propios datos de configuración en tu Google Drive)
    - `openid`, `.../auth/userinfo.email` y `.../auth/userinfo.profile`
-5. **Público → Publicar app**. Estos permisos son «no sensibles», así que Google no pide revisión. Si preferís dejarla en prueba, agregá en «Usuarios de prueba» cada correo que vaya a entrar.
+5. **Público → Usuarios de prueba**: agregá tu correo. Mientras la app esté «en prueba», solo entran las cuentas de esa lista (hasta 100).
+   Para abrirla a cualquiera: en **Desarrollo de la marca** completá la página principal (`https://alfredlabs.vercel.app`), la política de privacidad (`https://alfredlabs.vercel.app/privacidad.html`) y el dominio autorizado; después **Público → Publicar app**. Los permisos son «no sensibles», así que Google no pide revisión mientras no se suba un logo.
 6. **Clientes → Crear cliente**:
    - Tipo: **Aplicación web**. Nombre: **Alfred web**.
    - **Orígenes autorizados de JavaScript**: `https://alfredlabs.vercel.app` y `http://127.0.0.1:5173`
