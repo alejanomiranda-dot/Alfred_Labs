@@ -97,6 +97,7 @@ IMPRIMIBLE SIN RETOQUES
 - Evitá voladizos de más de 45° siempre que la forma lo permita: preferí pendientes, apoyos sobre el cuerpo o la base, y colas o brazos que bajen hasta la base en vez de quedar en el aire.
 - Espesores mínimos de 1,2 mm; salientes finos de al menos 2 mm.
 - Medidas: si la persona pide una medida total (alto, ancho o largo), envolvé el modelo terminado en resize() con esa medida y auto=true para las demás (por ejemplo resize([0,0,80],auto=true)), y después aplicá el corte de la base. Si no pide medidas, elegí un tamaño razonable de escritorio (50 a 90 mm).
+- Preferí primitivas (sphere, cylinder, hull, scale) antes que polyhedron(). Si usás polyhedron(), tiene que ser cerrado y los puntos de cada cara van en sentido horario mirando la pieza desde afuera (es el orden de OpenSCAD); al revés, las restas tapan agujeros y la pieza sale mal.
 - $fn entre 24 y 40. Máximo 290 mm por eje. Mantené la malla liviana: pelo, barba, plumas o pelaje se insinúan con pocos volúmenes grandes (mechones o bloques con hull) y surcos, nunca con decenas de esferas chicas.
 
 REGLAS

@@ -27,6 +27,24 @@ test('3MF con componentes en otro archivo y transformaciones, como los de Bambu 
  const {file}=open('bambu.3mf',zipSync({'3D/3dmodel.model':strToU8(main),'3D/Objects/object_1.model':strToU8(mesh)}));
  assert.deepEqual(file.size,[200,100,100]);
 });
+test('una malla con las caras hacia adentro se da vuelta: volumen, peso y tiempo nunca son negativos',async()=>{
+ const {reviewPrint}=await import('../src/printability.js');
+ const t=tube.combined.triangles,flipped=new Uint32Array(t.length);for(let i=0;i<t.length;i+=3)flipped.set([t[i],t[i+2],t[i+1]],i);
+ const inverted={...tube.combined,triangles:flipped};
+ assert.equal(open('derecho.stl',stlBytes(tube.combined)).prepared.inverted,false);
+ const {prepared,model}=open('al-reves.stl',stlBytes(inverted));
+ assert.equal(prepared.inverted,true);
+ assert.ok(Math.abs(prepared.volume-tube.volume)/tube.volume<.001);
+ assert.ok(Math.abs(model.volume-tube.volume)/tube.volume<.001);
+ // Proyectos guardados antes de la corrección: la malla invertida guardada se reconstruye bien.
+ const raw=readMeshFile('viejo.stl',stlBytes(inverted)),old=buildModel(api,{...defaults,kind:'free',importedMesh:{name:'viejo',vertices:raw.vertices,triangles:raw.triangles},freeDesign:{version:1,nodes:[node('imported')]}});
+ assert.ok(old.volume>0);
+ const review=reviewPrint(inverted,-tube.volume);
+ assert.ok(review.grams>0&&review.seconds>0&&review.material>0);
+ // Lo que ve el panel: la pieza importada pesa y tarda lo mismo que la original.
+ const want=reviewPrint(tube.combined,tube.volume),got=reviewPrint(model.combined,model.volume);
+ assert.ok(Math.abs(got.grams-want.grams)/want.grams<.01&&Math.abs(got.seconds-want.seconds)/want.seconds<.01);
+});
 test('la pieza importada se puede grabar y perforar; archivos rotos o pesados se explican',()=>{
  const {prepared}=open('pieza.stl',stlBytes(tube.combined));
  const engraved=buildModel(api,{...defaults,kind:'free',importedMesh:prepared.mesh,freeDesign:{version:1,nodes:[node('imported'),node('box',{size:[3,50,6],position:[0,0,30]}),node('subtract',{inputs:[0,1]})]}});

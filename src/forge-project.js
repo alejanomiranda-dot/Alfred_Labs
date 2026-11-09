@@ -16,7 +16,7 @@ export function prepareForgeProposal(api,current,result,archive){
  if(prepared.size.some(v=>v<=0||v>300))throw Error('La pieza debe tener volumen y medir como máximo 300 mm por eje. Pedí una versión más pequeña.');
  const candidate=validate({...defaults,project:current.forge||current.keepProject?current.project:revision.prompt.slice(0,60),baseColor:current.baseColor,detailColor:current.detailColor,kind:'free',importedMesh:prepared.mesh,freeDesign:{version:1,nodes:[{type:'imported',position:[0,0,0],rotation:[0,0,0]}]},forge});
  const built=buildModel(api,candidate);
- return {candidate,built,revision,simplified:prepared.tolerance>0};
+ return {candidate,built,revision,simplified:prepared.tolerance>0,inverted:prepared.inverted};
 }
 export function appendForgeRevision(archive,revision){
  return validateForgeArchive({version:1,selected:revision.id,revisions:[...(archive?.revisions||[]),revision].slice(-maxForgeVersions)});

@@ -98,24 +98,34 @@ function wrapAround(C,own,target,n){
 }
 // The imported file is kept outside the program (it can be large); the program only says where it is used.
 export function withImport(program,params){return {...program,hasImported:Boolean(params?.importedMesh)};}
-function importedSolid(api,own,data){
- const mesh=new api.Mesh({numProp:3,vertProperties:Float32Array.from(data.vertices),triVerts:Uint32Array.from(data.triangles)});mesh.merge();
- let solid;try{solid=own(new api.Manifold(mesh));}catch{throw Error('La pieza importada no es un sólido cerrado (tiene agujeros o caras sueltas en la malla). Repará el archivo en Bambu Studio o en el programa donde lo hiciste.');}
- if(solid.status()!=='NoError'||solid.isEmpty())throw Error('La pieza importada no es un sólido cerrado (tiene agujeros o caras sueltas en la malla). Repará el archivo en Bambu Studio o en el programa donde lo hiciste.');
- return solid;
+// A closed mesh whose faces all point inward is still a valid manifold, but with negative volume
+// (for example a polyhedron() written with OpenSCAD's opposite winding). It is the same shape with
+// its faces reversed, so it is turned right side out; info.inverted tells the caller it happened.
+function importedSolid(api,own,data,info={}){
+ const build=flip=>{
+  const triVerts=Uint32Array.from(data.triangles);
+  if(flip)for(let i=0;i<triVerts.length;i+=3){const b=triVerts[i+1];triVerts[i+1]=triVerts[i+2];triVerts[i+2]=b;}
+  const mesh=new api.Mesh({numProp:3,vertProperties:Float32Array.from(data.vertices),triVerts});mesh.merge();
+  let solid;try{solid=own(new api.Manifold(mesh));}catch{throw Error('La pieza importada no es un sólido cerrado (tiene agujeros o caras sueltas en la malla). Repará el archivo en Bambu Studio o en el programa donde lo hiciste.');}
+  if(solid.status()!=='NoError'||solid.isEmpty())throw Error('La pieza importada no es un sólido cerrado (tiene agujeros o caras sueltas en la malla). Repará el archivo en Bambu Studio o en el programa donde lo hiciste.');
+  return solid;
+ };
+ const solid=build(false);
+ info.inverted=solid.volume()<0;
+ return info.inverted?build(true):solid;
 }
 // Turns a freshly read file into the stored piece: it must be a closed solid; heavy meshes are
 // simplified with a tolerance of hundredths of a millimeter so the project stays light.
 export function prepareImport(api,file){
  const owned=[],own=x=>(owned.push(x),x);
  try{
-  let solid=importedSolid(api,own,file);const original=solid.numTri();let tolerance=0;
+  const info={};let solid=importedSolid(api,own,file,info);const original=solid.numTri();let tolerance=0;
   for(const t of [.01,.02,.05]){if(solid.numTri()<=60000)break;solid=own(solid.simplify(t));tolerance=t;}
   if(solid.numTri()>150000)throw Error('La pieza es demasiado detallada para importarla. Simplificala antes en otro programa.');
   const raw=solid.getMesh(),vertices=[],triangles=Array.from(raw.triVerts);
   for(let i=0;i<raw.vertProperties.length;i+=raw.numProp)vertices.push(...[0,1,2].map(k=>Math.round(raw.vertProperties[i+k]*1e4)/1e4));
   const b=solid.boundingBox();
-  return {mesh:{name:file.name,vertices,triangles},size:b.max.map((v,i)=>v-b.min[i]),original,triangles:solid.numTri(),tolerance,volume:solid.volume()};
+  return {mesh:{name:file.name,vertices,triangles},size:b.max.map((v,i)=>v-b.min[i]),original,triangles:solid.numTri(),tolerance,volume:solid.volume(),inverted:info.inverted};
  }finally{for(const x of owned.reverse())x.delete();}
 }
 // What the guide needs to place things on an imported piece: its exact extents and real cuts at several heights

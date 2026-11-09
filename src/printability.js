@@ -74,7 +74,8 @@ export function reviewPrint(mesh,volume,options={}){
  const ranking=orientations.map(rotation=>{const s=rotation===orientations[0]?stats:surfaceStats(rotateSoup(soup,rotation),opts);return {rotation,overhang:s.overhang,contact:s.contact,score:s.overhang-Math.min(s.contact,400)*.5+(s.contact<20?500:0)};}).sort((x,y)=>x.score-y.score);
  const best=ranking[0],current=ranking.find(r=>r.rotation===orientations[0]);
  const suggestion=best.rotation!==orientations[0]&&best.overhang<current.overhang*.6-10?best:null;
- // Material and time.
+ // Material and time. A mesh with its faces reversed has negative volume; the material never is.
+ volume=Math.abs(Number(volume)||0);
  const shell=Math.min(volume,stats.area*opts.shell),material=shell+Math.max(0,volume-shell)*opts.infill+stats.supportVolume;
  const grams=material/1000*opts.density,layers=Math.ceil(stats.height/opts.layer),seconds=material/opts.flow+layers*opts.layerSeconds+opts.warmupSeconds;
  const issues=[];
