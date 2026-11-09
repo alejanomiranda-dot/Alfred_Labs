@@ -8,6 +8,7 @@ import {stlBytes,threeMfBytes} from '../export.js';
 import {revisionName} from '../handoff.js';
 import {loadSettings,money} from '../settings.js';
 import {saveVersion,listProjects,deleteProject,countProjects,migrateLegacy,pruneProject} from '../library.js';
+import {cloudConfigured,currentUser,onAccountChange,accountName,preloadGoogle,signIn,signOut,syncLibrary,pushVersion,removeFromCloud,versionParams} from '../cloud.js';
 import {thumbnail} from '../studio-output.js';
 import {readMeshFile} from '../mesh-import.js';
 import {prepareImport,describeImport} from '../solid-program.js';
@@ -507,10 +508,13 @@ $('importProject').onchange=async()=>{
 };
 async function storeVersion(note){
  if(!S.model)throw Error('Todavía no hay una pieza para guardar.');S.projectId=S.projectId||crypto.randomUUID();
- const projectId=S.projectId,params=S.params;
- await saveVersion({id:crypto.randomUUID(),projectId,date:new Date().toISOString(),name:params.project,note,params:validate(params),thumb:thumbnail(viewer.capture())});
+ const projectId=S.projectId,params=S.params,owner=currentUser()?.id;
+ const version={id:crypto.randomUUID(),projectId,date:new Date().toISOString(),name:params.project,note,params:validate(params),thumb:thumbnail(viewer.capture()),...(owner?{owner,cloud:false}:{})};
+ await saveVersion(version);
  if(S.params===params){S.dirty=false;updateSaved();}
- await pruneProject(projectId);updateCount();
+ // Con la cuenta abierta también va a la nube; si falla, sube en la próxima sincronización.
+ pushVersion(version).catch(()=>{});
+ removeFromCloud(await pruneProject(projectId)).catch(()=>{});updateCount();
 }
 async function saveCurrent(){
  try{await storeVersion('Guardado a mano');toast('Guardado en «Mis diseños».');}
@@ -519,16 +523,16 @@ async function saveCurrent(){
 // Arma la pieza de una versión guardada y descarga su 3MF, sin abrirla ni tocar la pieza actual.
 async function downloadVersion(v){
  toast('Preparando el archivo…');await tick();
- try{const m=build(validate(v.params));download(threeMfBytes(m),revisionName(v.name)+'.3mf','model/3mf');toast('Descarga iniciada: '+sizeText(m.dimensions)+'.');}
+ try{const m=build(validate(await versionParams(v)));download(threeMfBytes(m),revisionName(v.name)+'.3mf','model/3mf');toast('Descarga iniciada: '+sizeText(m.dimensions)+'.');}
  catch(e){toast('No se pudo descargar: '+e.message);}
 }
 $('saveVersion').onclick=saveCurrent;
 function updateCount(){countProjects().then(n=>{$('savedCount').textContent=n;}).catch(()=>{});}
 async function showLibrary(){
- const host=$('libraryList');host.replaceChildren();let projects=[];
+ const host=$('libraryList');host.replaceChildren();let projects=[];renderLibraryHint();
  try{projects=await listProjects();}catch{host.textContent='Este navegador no permite guardar proyectos.';}
  if(!projects.length&&!host.textContent)host.innerHTML='<p class="hint">Todavía no hay piezas. Las que arme Alfred se guardan solas acá.</p>';
- const open=v=>{try{const candidate=validate(v.params);build(candidate);resetProject(candidate);S.projectId=v.projectId;refresh();$('library').close();toast('Abriste «'+v.name+'».');}catch(e){toast(e.message);}};
+ const open=async v=>{try{const candidate=validate(await versionParams(v));build(candidate);resetProject(candidate);S.projectId=v.projectId;refresh();$('library').close();toast('Abriste «'+v.name+'».');}catch(e){toast(e.message);}};
  for(const p of projects){
   const card=document.createElement('article');card.className='library-card';
   const img=document.createElement('img');img.alt='';if(p.latest.thumb)img.src=p.latest.thumb;
@@ -544,12 +548,47 @@ async function showLibrary(){
   }
   const fileBtn=document.createElement('button');fileBtn.textContent='Descargar 3MF';fileBtn.onclick=()=>downloadVersion(p.latest);
   const versions=document.createElement('button');versions.textContent='Versiones ('+p.versions.length+')';versions.onclick=()=>{list.hidden=!list.hidden;};
-  const remove=document.createElement('button');remove.className='ghost';remove.textContent='Eliminar';remove.onclick=async()=>{if(!confirm('¿Eliminar «'+p.name+'» y sus '+p.versions.length+' versiones? No se puede deshacer.'))return;await deleteProject(p.projectId);if(S.projectId===p.projectId)S.projectId=null;updateCount();showLibrary();};
+  const remove=document.createElement('button');remove.className='ghost';remove.textContent='Eliminar';remove.onclick=async()=>{if(!confirm('¿Eliminar «'+p.name+'» y sus '+p.versions.length+' versiones? No se puede deshacer.'))return;removeFromCloud(await deleteProject(p.projectId)).catch(()=>{});if(S.projectId===p.projectId)S.projectId=null;updateCount();showLibrary();};
   actions.append(openBtn,fileBtn,versions,remove);card.append(img,info,actions,list);host.append(card);
  }
  if(!$('library').open)$('library').showModal();
 }
-$('libraryToggle').onclick=showLibrary;$('closeLibrary').onclick=()=>$('library').close();
+$('libraryToggle').onclick=()=>{showLibrary();syncNow({interactive:true});};
+
+// ---------- Cuenta ----------
+// Con la cuenta de Google, «Mis diseños» se guarda también en tu Google Drive y es el mismo en cualquier computadora (src/cloud.js).
+function renderLibraryHint(){
+ const user=currentUser(),hint=$('libraryHint');hint.replaceChildren();
+ if(user){hint.textContent='Tus piezas se guardan solas en tu Google Drive ('+(user.email||accountName(user))+'), con sus versiones. Las ves en cualquier computadora donde entres con Google.';return;}
+ hint.textContent='Cada pieza que arma Alfred se guarda sola en este navegador, con sus versiones. Desde acá podés volver a abrir o descargar el 3MF de cualquiera.';
+ if(cloudConfigured){const b=document.createElement('button');b.type='button';b.className='link';b.textContent='Entrá con Google';b.onclick=enterAccount;hint.append(' ',b,' para tenerlas también en otras computadoras.');}
+}
+function renderAccount(){
+ const user=currentUser(),b=$('account');b.hidden=!cloudConfigured;
+ b.textContent=user?(user.given||accountName(user).split(/[\s@]/)[0]||'Mi cuenta'):'Entrar';
+ b.title=user?'Cuenta: '+(user.email||accountName(user)):'Entrar con Google para ver tus diseños en cualquier computadora';
+ if($('library').open)renderLibraryHint();
+}
+let syncing=null,lastSync=0;
+// interactive solo desde un clic: si el permiso de Google venció, abre su ventana para renovarlo.
+function syncNow({quiet=false,interactive=false}={}){
+ if(!currentUser()||syncing)return syncing;
+ lastSync=Date.now();
+ syncing=syncLibrary({interactive}).then(r=>{if(r.needsToken)return;updateCount();if($('library').open)showLibrary();if(!quiet&&r.pulled+r.pushed)toast('«Mis diseños» está al día con tu Google Drive.');})
+  .catch(e=>{if(!quiet)toast('No se pudieron sincronizar tus diseños: '+e.message);})
+  .finally(()=>{syncing=null;});
+ return syncing;
+}
+async function enterAccount(){
+ try{const user=await signIn();renderAccount();toast('Entraste como '+(user.email||accountName(user))+'. Sincronizando tus diseños…');syncNow();}
+ catch(e){toast('No se pudo entrar: '+e.message);}
+}
+$('account').onclick=async()=>{
+ const user=currentUser();if(!user)return enterAccount();
+ if(!confirm('Entraste como '+(user.email||accountName(user))+'.\n\n¿Cerrar la sesión en esta computadora? Tus diseños quedan guardados en tu Google Drive.'))return;
+ try{await signOut();updateCount();if($('library').open)showLibrary();toast('Cerraste la sesión. Tus diseños siguen en tu Google Drive.');}
+ catch(e){toast('No se pudo cerrar la sesión: '+e.message);}
+};$('closeLibrary').onclick=()=>$('library').close();
 
 // ---------- Imprimir ----------
 const printer=createPrint({dialog:$('printDialog'),toast,app:{model:()=>S.model,params:()=>S.params,review:()=>S.review,settings:()=>S.settings,setSettings:s=>{S.settings=s;renderPieceStatus();},api:()=>S.api,capture:()=>viewer.capture(),colors:()=>S.model?partsOf(S.model,S.params).filter(p=>p.mesh.triangles.length).map(p=>p.color):[]}});
@@ -564,7 +603,11 @@ $('tryExample').onclick=async()=>{
 
 // ---------- Arranque ----------
 updateMode();renderConversation();
-migrateLegacy().catch(()=>0).then(updateCount);
+renderAccount();preloadGoogle();
+onAccountChange(()=>{renderAccount();updateCount();});
+migrateLegacy().catch(()=>0).then(updateCount).then(()=>syncNow({quiet:true}));
+// Al volver a esta pestaña se traen los cambios hechos en otra computadora.
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastSync>60000)syncNow({quiet:true});});
 if(!S.assistantReady)fetch('/api/assistant').then(r=>r.ok?r.json():null).then(s=>{S.assistantReady=s?.enabled===true;}).catch(()=>{});
 try{S.api=await Module({locateFile:p=>p.endsWith('.wasm')?wasmUrl:p});S.api.setup();refresh();}
 catch(e){console.error(e);toast('No se pudo iniciar el motor 3D. Recargá la página.');}

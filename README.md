@@ -41,7 +41,7 @@ Abrir `http://127.0.0.1:5173/` (o hacer doble clic en **Iniciar taller.cmd**). `
 - **Revisión de impresión**: voladizos que necesitan soporte, paredes finas, apoyo en la cama, orientación sugerida, gramos, tiempo y costo. Son estimaciones; Bambu Studio da el valor final.
 - **Prueba de encaje**: exporta solo una franja de la pieza.
 - 3MF por partes y colores, STL unido, paquete ZIP con instrucciones, carpeta de trabajo.
-- **Biblioteca con versiones** y miniaturas (IndexedDB del navegador; no se sincroniza entre dispositivos). Foto de producto PNG y presupuesto para imprimir o guardar como PDF.
+- **Biblioteca con versiones** y miniaturas. Sin cuenta vive en este navegador (IndexedDB); con **Entrar con Google** se guarda también en tu propio Google Drive, en la carpeta oculta de la app, y aparece en cualquier computadora. Sin servidor ni base de datos propios. El proyecto completo baja recién al abrirlo. Foto de producto PNG y presupuesto para imprimir o guardar como PDF.
 - **Costos y estilo**: precio del filamento, hora de máquina, margen, colores, tipografía y notas que la guía usa por defecto.
 
 ## Asistente y publicación
@@ -62,4 +62,4 @@ Para probar una vista previa protegida con la credencial OIDC local: `LIVE_URL` 
 
 ## Privacidad
 
-El modelado, la importación, la medición y la revisión se calculan en el navegador. La biblioteca y los ajustes viven en este navegador. Un QR con URL dirige a quien lo escanea al destino indicado.
+El modelado, la importación, la medición y la revisión se calculan en el navegador. Los ajustes viven en este navegador. La biblioteca, también, salvo con la cuenta abierta: entonces cada versión se copia en el Google Drive de esa persona (`appDataFolder`, permiso `drive.appdata`, que solo da acceso a los archivos que crea Alfred). La cuenta se activa con `VITE_GOOGLE_CLIENT_ID`; sin ella el botón «Entrar» no aparece. Cómo crear ese acceso: [CUENTA-GOOGLE.md](CUENTA-GOOGLE.md). Un QR con URL dirige a quien lo escanea al destino indicado.
