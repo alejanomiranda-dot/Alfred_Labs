@@ -2,6 +2,12 @@
 
 Estudio de diseño 3D asistido para la Bambu Lab A2L. Unidades: milímetros. Web: https://alfredlabs.vercel.app
 
+## Llavero con logo adelante y QR atrás
+
+La entrada **Llavero · logo + QR** permite cargar un PNG/JPG y escribir el enlace. Construye una sola pieza multicolor de 50 × 60 × 3,8 mm, con agujero de 4 mm y QR de color al ras del dorso. Se puede cambiar el tamaño, revisar ambas caras y guardar el 3MF directamente desde la vista previa, sin pasar por el chat ni aplicar primero la propuesta. El logo conserva sus contornos; se reduce a hasta tres colores sólidos más la base clara, simplificando degradados. No usa IA.
+
+El 3MF conserva también el proyecto editable: se puede volver a abrir desde **Otros proyectos y herramientas → Abrir un proyecto** y cambiar el enlace sin cargar otra vez el logo. [Experiencia real con Mutual UNIR, mejoras y límites](EXPERIENCIA-LLAVERO.md).
+
 ## Alfred Forge · experimental
 
 Esta versión reúne Alfred Forge y el motor creativo de relieves y geometría nativa. Forge incluye generación OpenSCAD, vista previa sin aplicar, correcciones, historial de fuentes y exportación. Para probar: `npm ci`, `npm run forge:check`, `npm run dev`; abrí `http://127.0.0.1:5173` y elegí **Alfred Forge**. La muestra incluida funciona sin IA y sin OpenSCAD instalado. En Windows: **Preparar taller.cmd**, luego **Iniciar taller.cmd**.

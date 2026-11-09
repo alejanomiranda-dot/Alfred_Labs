@@ -47,8 +47,9 @@ export function createViewerTools({host,scene,camera,renderer,group,markDirty,me
 
  // ---- proposal preview
  function setGhost(model,colors){state.points=[];drawRuler();dispose(ghost);if(!model)return applyGhostMode();
-  for(const part of colors){if(!part.mesh.triangles.length)continue;const m=new THREE.Mesh(meshGeometry(part.mesh),new THREE.MeshStandardMaterial({color:part.color,transparent:true,opacity:.55,roughness:.5,emissive:0x1f6f55,emissiveIntensity:.35,depthWrite:false,flatShading:true}));m.renderOrder=2;ghost.add(m);}
-  const edges=new THREE.LineSegments(new THREE.EdgesGeometry(meshGeometry(colors[0].mesh),25),new THREE.LineBasicMaterial({color:0x93f5ce,transparent:true,opacity:.9}));ghost.add(edges);
+  const opaque=model.params?.kind==='keychain';
+  for(const part of colors){if(!part.mesh.triangles.length)continue;const m=new THREE.Mesh(meshGeometry(part.mesh),new THREE.MeshStandardMaterial({color:part.color,transparent:!opaque,opacity:opaque?1:.55,roughness:.5,emissive:opaque?0:0x1f6f55,emissiveIntensity:opaque?0:.35,depthWrite:opaque,flatShading:true}));m.renderOrder=2;ghost.add(m);}
+  if(!opaque){const edges=new THREE.LineSegments(new THREE.EdgesGeometry(meshGeometry(colors[0].mesh),25),new THREE.LineBasicMaterial({color:0x93f5ce,transparent:true,opacity:.9}));ghost.add(edges);}
   applyGhostMode();applySection();}
  function applyGhostMode(){const has=ghost.children.length>0;ghost.visible=has&&state.ghostMode!=='current';group.visible=!has||state.ghostMode!=='proposal';for(const m of group.children)if(m.material){m.material.transparent=has&&state.ghostMode==='both';m.material.opacity=has&&state.ghostMode==='both'?.35:1;}heat.visible=!has||state.ghostMode==='current';drawDims();markDirty();}
 
