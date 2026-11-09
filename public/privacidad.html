@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Privacidad · Alfred Labs</title>
+<meta name="description" content="Qué datos usa Alfred Labs, dónde se guardan tus diseños y cómo borrarlos.">
+<style>
+:root{color-scheme:light dark;--bg:#f6f7f8;--card:#fff;--text:#1d2329;--muted:#5b6670;--line:#dde2e6;--accent:#16794c}
+@media (prefers-color-scheme:dark){:root{--bg:#12171c;--card:#1a2128;--text:#e7ecef;--muted:#9aa6b0;--line:#2b343d;--accent:#4cc28a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:720px;margin:0 auto;padding:32px 16px 64px}
+header{display:flex;align-items:center;gap:10px;margin-bottom:24px}
+header a{color:inherit;text-decoration:none;display:flex;align-items:center;gap:8px;font-weight:600}
+header svg{width:24px;height:26px;color:var(--accent)}
+h1{font-size:1.8rem;line-height:1.2;margin:0 0 6px}
+h2{font-size:1.15rem;margin:32px 0 8px}
+p,li{color:var(--text)}
+.muted{color:var(--muted);font-size:.95rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin:16px 0}
+a{color:var(--accent)}
+ul{padding-left:1.2em}
+code{font-size:.9em;background:var(--line);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<main>
+<header><a href="./"><svg viewBox="0 0 40 44" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m20 2 17 10v20L20 42 3 32V12Z"/><path d="m3 12 17 10 17-10M20 22v20"/></svg>Alfred Labs</a></header>
+
+<h1>Privacidad</h1>
+<p class="muted">Última actualización: 9 de noviembre de 2026</p>
+
+<div class="card">
+<p><strong>En pocas palabras:</strong> tus diseños se guardan en tu navegador y, si entrás con Google, también en tu propio Google Drive. Alfred no tiene una base de datos con tus diseños ni con tus datos de Google, y no los comparte ni los vende.</p>
+</div>
+
+<h2>Sin cuenta</h2>
+<p>Podés usar Alfred sin entrar con ninguna cuenta. Tus diseños, sus versiones y tus ajustes (por ejemplo, el tema claro u oscuro) quedan guardados solamente en el navegador de tu computadora. Si borrás los datos del sitio en el navegador, se borran.</p>
+
+<h2>Si entrás con Google</h2>
+<p>Al tocar «Entrar», Google te pide permiso para que Alfred use:</p>
+<ul>
+<li><strong>Tu nombre, tu correo y el identificador de tu cuenta de Google</strong>, para mostrar con qué cuenta entraste y saber qué diseños son tuyos en cada computadora.</li>
+<li><strong>Una carpeta oculta de Alfred en tu Google Drive</strong> (permiso <code>drive.appdata</code>). Ahí se guarda una copia de cada diseño y su miniatura, para que los veas desde cualquier computadora. Esa carpeta no aparece entre tus archivos. Con este permiso, Alfred no puede ver, leer ni cambiar ningún otro archivo de tu Drive.</li>
+</ul>
+<p>Todo esto pasa directamente entre tu navegador y Google. Tus datos de Google y tus diseños no pasan por los servidores de Alfred ni se guardan en ellos. El permiso que da Google dura una hora y se guarda en tu navegador mientras tanto. Los diseños ocupan espacio de tu cuenta de Google.</p>
+
+<h2>Uso limitado de los datos de Google</h2>
+<p>El uso que hace Alfred de la información recibida de las APIs de Google cumple la <a href="https://developers.google.com/terms/api-services-user-data-policy">Política de Datos del Usuario de los Servicios de las APIs de Google</a>, incluidos los requisitos de uso limitado. En particular, Alfred usa esos datos solo para guardar y mostrar tus diseños; no los transfiere a terceros, no los usa para publicidad y no los usa para entrenar modelos de inteligencia artificial.</p>
+
+<h2>El asistente con inteligencia artificial</h2>
+<p>Cuando le escribís al asistente, o le pedís una figura o un relieve, Alfred envía tu mensaje, las imágenes que adjuntes y los datos del diseño actual a sus servidores y de ahí a OpenAI, que genera la respuesta. Alfred no guarda una copia de esos pedidos. OpenAI no usa los datos recibidos por su API para entrenar sus modelos y puede conservarlos por un tiempo limitado según <a href="https://openai.com/policies/privacy-policy">su propia política</a>. No incluyas datos personales que no quieras compartir. Tus datos de Google nunca se envían al asistente.</p>
+
+<h2>Dónde funciona</h2>
+<p>El sitio está alojado en Vercel, que procesa datos técnicos de cada visita (como la dirección IP) para entregar la página. Alfred no usa cookies de publicidad ni herramientas de analítica.</p>
+
+<h2>Cómo borrar tus datos</h2>
+<ul>
+<li><strong>Un diseño:</strong> «Mis diseños» → Eliminar. Con la sesión abierta, también se borra de tu Drive.</li>
+<li><strong>Esta computadora:</strong> tocá tu nombre arriba y cerrá la sesión. Los diseños salen de este navegador y siguen en tu Drive.</li>
+<li><strong>Todo lo que Alfred guardó en tu Drive:</strong> en Google Drive, Configuración → Administrar apps → Alfred Labs → Opciones → Borrar datos ocultos de la app.</li>
+<li><strong>El permiso de Google:</strong> quitáselo a Alfred en <a href="https://myaccount.google.com/connections">myaccount.google.com/connections</a>.</li>
+</ul>
+
+<h2>Contacto</h2>
+<p>Por cualquier consulta sobre privacidad escribí a <a href="mailto:alejano.miranda@gmail.com">alejano.miranda@gmail.com</a>. Si esta política cambia, se actualiza en esta misma página con su fecha.</p>
+</main>
+</body>
+</html>
