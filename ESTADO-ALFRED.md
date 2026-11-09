@@ -31,11 +31,13 @@ En `.tools/openscad` (de la carpeta principal, ignorado por git) está **OpenSCA
 - Vercel confirmado por ID: `prj_me6dUrAkieRMlfrWE3mnY3l753OS`, equipo `alejano910`, nombre actual `alfred_labs`. Repositorio actual: `alejanomiranda-dot/Alfred_Labs`; el remoto antiguo redirige. No existe `OPENAI_MODEL` fijada en Vercel: se utiliza el valor del código.
 - CAD conserva ahora Ñ y acentos usando Gentilis cuando la fuente elegida no los incluye, con aviso y prueba geométrica de regresión.
 
-## Pendiente de publicación
+## Publicación y seguimiento
 
-1. Probar la vista previa de esta rama con la imagen nueva y completar el PR, merge y despliegue.
-2. Confirmar Forge en producción con `FORGE_REMOTE_ENABLED=true`; conservar la protección de Vercel y los límites existentes.
-3. Actualizar este estado con los enlaces y resultados finales.
+- [PR #5](https://github.com/alejanomiranda-dot/Alfred_Labs/pull/5) integrado en `main`: `5c5bb85`. La vista previa protegida pasó con IA real: caja 80 × 50 × 30 mm, gato y ajuste a 80,009 mm, una pieza; sin errores JavaScript ni desborde móvil. Evidencia en `artifacts/preview/resultado.json`.
+- Producción: https://alfredlabs.vercel.app. `FORGE_REMOTE_ENABLED` se configuró con el valor exacto `true`, sin salto de línea. La protección de Vercel y los límites existentes se conservan.
+- La comprobación de producción detectó un problema adicional de selección de compilador: `fs.access('/opt/openscad/AppRun')` devolvía EACCES en la VM y activaba el OpenSCAD viejo. `fs.stat` y la ejecución del AppImage funcionaban. El worker real compilaba esa fuente en unos 41 s y a veces alcanzaba el límite; con la selección corregida tarda 0,605 s y devuelve `compiler.backend=manifold`. Se conservan CPU, memoria, red y tiempo máximos.
+- [PR #6](https://github.com/alejanomiranda-dot/Alfred_Labs/pull/6) contiene esta corrección y exige Manifold en la prueba de preparación de imágenes. Consultar allí el estado final de integración y el control de despliegue.
+- La prueba HTTP de la figura exportada comprueba respuesta 200, backend Manifold, STL válido, una pieza y altura de 80 mm. Su resultado posterior al despliegue queda en `artifacts/production/forge-verification.json`; los archivos de evidencia son locales e ignorados por Git.
 
 ## Validación física
 
