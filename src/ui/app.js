@@ -25,7 +25,7 @@ import {createPrint,download} from './print.js';
 
 const $=id=>document.getElementById(id);
 const assistantFields=['kind','project','name','phone','qrText','caption','shape','width','height','thickness','relief','hole','baseColor','detailColor','backDecoration','backStyle','backDepth','freeDesign'];
-const emptyParams=()=>({...defaults,kind:'free',project:'Mi pieza',freeDesign:null,importedMesh:null,sourceInfo:null,forge:null});
+const emptyParams=()=>({...defaults,kind:'free',project:'Mi pieza',freeDesign:null,importedMesh:null,importedColors:null,sourceInfo:null,forge:null});
 const sizeText=v=>v.map(x=>String(Math.round(x*10)/10).replace('.',',')).join(' × ')+' mm';
 const tick=()=>new Promise(r=>setTimeout(r,30));
 class Stale extends Error{}
@@ -98,7 +98,7 @@ function hasPieceParams(p){return !(p.kind==='free'&&!p.freeDesign);}
 // Una pieza nueva por medidas no arrastra la malla, el relieve ni las versiones de la anterior.
 function withoutLeftovers(c){
  const usesImport=c.kind==='free'&&c.freeDesign?.nodes?.some(n=>n.type==='imported');
- return usesImport?c:{...c,importedMesh:null,sourceInfo:null,forge:null};
+ return usesImport?c:{...c,importedMesh:null,importedColors:null,sourceInfo:null,forge:null};
 }
 let liveTimer;
 function update(patch,{live=false,rerender=false}={}){
@@ -248,14 +248,23 @@ async function assistantFlow(prompt,attachment,epoch){
 // Relieve: con imagen adjunta se usa tal cual; si no, se genera. Cambiar medidas después no vuelve a generar.
 async function reliefFlow(result,attachment,epoch){
  const spec=validateGeneration(result.generation);addMessage('assistant',result.message);
- let image=null,invert=false;
- if(attachment)image=attachment.dataUrl;
- else if(S.relief&&S.relief.spec.subject===spec.subject){image=S.relief.image;invert=S.relief.invert;}
- else{setBusy(true,'Dibujando la imagen del relieve… puede tardar hasta dos minutos.');const data=await post('/api/assistant',{action:'generateVisual',spec},200000);check(epoch);image=data.imageDataUrl;}
- setBusy(true,'Construyendo el relieve en 3D…');await tick();
+ let image=null,invert=false,attached=false;
+ const samePalette=S.relief&&(S.relief.spec.palette||[]).join()===spec.palette.join();
+ if(attachment){image=attachment.dataUrl;attached=true;}
+ // Una imagen propia se vuelve a convertir con los colores nuevos, sin redibujarla.
+ else if(S.relief&&S.relief.spec.subject===spec.subject&&(samePalette||S.relief.attached)){image=S.relief.image;invert=S.relief.invert;attached=S.relief.attached;}
+ else{
+  // Pasar a colores (o cambiarlos) redibuja la imagen; si la anterior era una foto propia, se usa de referencia.
+  const reference=S.relief?.attached&&/^data:image\/(png|jpeg);base64,/.test(S.relief.image)&&S.relief.image.length<=850000?S.relief.image:null;
+  setBusy(true,spec.palette.length?'Dibujando el motivo en sus colores… puede tardar hasta dos minutos.':'Dibujando la imagen del relieve… puede tardar hasta dos minutos.');
+  const data=await post('/api/assistant',{action:'generateVisual',spec,...(reference?{imageDataUrl:reference}:{})},200000);check(epoch);image=data.imageDataUrl;
+ }
+ setBusy(true,spec.palette.length?'Separando los colores en partes…':'Construyendo el relieve en 3D…');await tick();
  const mesh=await reliefFromImage(image,spec,{invert});check(epoch);
  const candidate=validate(generatedParams(S.params,mesh,spec)),built=build(candidate);
- S.relief={image,spec,invert};apply(candidate,built,'Relieve de '+spec.width+' × '+spec.height+' mm');
+ S.relief={image,spec,invert,attached};
+ if(mesh.missing?.length)addMessage('assistant','No encontré en la imagen '+(mesh.missing.length===1?'el color '+mesh.missing[0]:'los colores '+mesh.missing.join(', '))+'; la pieza quedó con el resto.');
+ apply(candidate,built,(spec.palette.length?'Relieve en '+spec.palette.length+' colores de ':'Relieve de ')+spec.width+' × '+spec.height+' mm');
 }
 async function rebuildRelief(spec,invert=S.relief?.invert){
  if(!S.relief)return;

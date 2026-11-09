@@ -77,3 +77,38 @@ test('errores de acceso a imágenes se explican sin revelar credenciales ni deta
  await assert.rejects(designService({action:'bad'},{}),/Acción/);
  const noCall=()=>{throw Error('No debe salir a internet');};await assert.rejects(generateVisual({spec,imageDataUrl:'https://example.com'},'test-key',noCall),/referencia/);
 });
+
+// Escudo sintético: placa blanca, mitad roja y mitad negra, con una franja blanca (letras) en el medio.
+function shieldImage(n=160){
+ const rgba=new Uint8ClampedArray(n*n*4).fill(255);
+ for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+  const inside=Math.hypot(x-n/2,y-n/2)<n*.38,stripe=Math.abs(y-n/2)<n*.04&&Math.abs(x-n/2)<n*.25;
+  if(!inside||stripe)continue;const i=(y*n+x)*4,red=x<n/2;
+  rgba[i]=red?205:20;rgba[i+1]=red?25:20;rgba[i+2]=red?35:20;
+ }
+ return rgba;
+}
+test('relieve en colores: una parte por color, placa del primer color y 3MF listo para el AMS',()=>{
+ const colorSpec=validateGeneration({...spec,width:80,height:80,palette:['#FFFFFF','#d71920','#111111']});
+ assert.deepEqual(colorSpec.palette,['#ffffff','#d71920','#111111']);
+ const mesh=reliefMesh(shieldImage(),160,160,colorSpec);
+ assert.equal(mesh.colors.layers.length,2);assert.equal(mesh.colors.zFrom,2);
+ const params=generatedParams(defaults,mesh,colorSpec);
+ assert.equal(params.baseColor,'#ffffff');assert.equal('colors' in params.importedMesh,false);
+ const model=buildModel(api,params);
+ assert.deepEqual(model.parts.map(p=>p.color),['#ffffff','#d71920','#111111']);
+ assert.ok(model.parts.every(p=>p.mesh.triangles.length>0));
+ // Los colores solo están arriba de la placa: la base se imprime con un único filamento.
+ for(const part of model.parts.slice(1)){let low=Infinity;for(let i=2;i<part.mesh.positions.length;i+=part.mesh.numProp)low=Math.min(low,part.mesh.positions[i]);assert.ok(low>=1.99,'color debajo de la placa: '+low);}
+ assert.deepEqual(model.dimensions.map(Math.round),[80,80,5]);
+ const zip=threeMfBytes(model);assert.ok(zip.length>1000);
+ // Monocromo sigue igual: sin paleta no hay partes de color.
+ const mono=buildModel(api,generatedParams(defaults,reliefMesh(shieldImage(),160,160,spec),validateGeneration(spec)));
+ assert.equal(mono.parts,undefined);assert.equal(mono.params.importedColors,null);
+});
+test('paleta inválida o de un solo color no rompe el relieve monocromo',()=>{
+ assert.deepEqual(validateGeneration({...spec,palette:['#ffffff']}).palette,[]);
+ assert.deepEqual(validateGeneration(spec).palette,[]);
+ assert.throws(()=>validateGeneration({...spec,palette:['rojo','#000000']}));
+ assert.throws(()=>validateGeneration({...spec,palette:['#000000','#111111','#222222','#333333','#444444']}));
+});

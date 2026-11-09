@@ -103,3 +103,10 @@ test('Forge usa un modelo de razonamiento por defecto con instrucciones de impre
  await generateForgeSource({prompt:'Un gato de 80 mm',history:[]},{OPENAI_API_KEY:'secret-test'},{fetcher:async(_,init)=>{sent=JSON.parse(init.body);return {ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify({scad:'cube([10,10,10]); // pieza de prueba suficientemente larga',description:'Cubo',assumptions:[],caveats:[]})}]}]})};}});
  assert.equal(sent.model,'gpt-6.1-sol');assert.equal(sent.reasoning.effort,'medium');assert.match(sent.instructions,/resize\(\[0,0,80\]/);assert.match(sent.instructions,/intersection/);
 });
+test('local: si la fuente generada no compila, se corrige una vez con las líneas de error',async t=>{
+ if(!(await forgeStatus()).compiler){t.skip('OpenSCAD no instalado.');return;}
+ const prompts=[],answers=[{...notes,scad:'cube([10,10,10]) this is broken;'},notes];
+ const result=await runForge({action:'generate',prompt:'Bloque'},{env:{OPENAI_API_KEY:'fake-unit-test-key'},fetcher:async(_url,init)=>{prompts.push(JSON.parse(JSON.parse(init.body).input.at(-1).content));return aiReply(answers.shift());}});
+ assert.equal(prompts.length,2);assert.match(prompts[1].pedido,/no compiló/);assert.match(prompts[1].pedido,/error/i);assert.doesNotMatch(prompts[1].pedido,/alfred-forge-|AppData|\Temp/);
+ assert.equal(result.scad,source);assert.ok(result.files.stl);
+});

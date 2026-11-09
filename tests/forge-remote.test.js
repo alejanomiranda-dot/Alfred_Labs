@@ -45,3 +45,22 @@ test('API remota: sin código; origen/JSON y cuota se comprueban antes de crear 
  for(let i=0;i<20;i++)assert.equal((await call(handler)).status,200);
  assert.equal((await call(handler)).status,429);assert.equal(runs,20);
 });
+test('remoto: una pieza generada que no compila o pesa demasiado se corrige sola una vez con el error real',async()=>{
+ const aiReply=result=>({ok:true,status:200,json:async()=>({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(result)}]}]})});
+ for(const failure of [{code:'compile_failed',detail:'ERROR: Parser error in file "piece.scad", line 3'},{code:'compile_size'}]){
+  const s=fakeSandbox(),reports=[{ok:false,error:'x',...failure},{ok:true,files:{stl:200},compiler:{backend:'manifold'}}],prompts=[];
+  const read=s.readFileToBuffer;s.readFileToBuffer=async o=>o.path.endsWith('.json')?Buffer.from(JSON.stringify(reports.shift())):read(o);
+  const fetcher=async(_url,init)=>{prompts.push(JSON.parse(JSON.parse(init.body).input.at(-1).content));return aiReply({scad,description:'Busto de 80 mm',assumptions:[],caveats:[]});};
+  const result=await runRemoteForge({action:'generate',prompt:'Busto'},{env,createSandbox:async()=>s,fetcher});
+  assert.equal(prompts.length,2);assert.equal(prompts[1].fuenteAnterior,scad);
+  if(failure.detail)assert.match(prompts[1].pedido,/Parser error/);else assert.match(prompts[1].pedido,/\$fn=24/);
+  assert.ok(result.files.stl);assert.ok(result.caveats.some(c=>/simplificó/.test(c)));assert.equal(s.stops,1);
+ }
+ // Si la segunda versión tampoco compila, el mensaje es claro y la VM se detiene.
+ const s=fakeSandbox();const read=s.readFileToBuffer;s.readFileToBuffer=async o=>o.path.endsWith('.json')?Buffer.from(JSON.stringify({ok:false,code:'compile_size',error:'x'})):read(o);
+ const fetcher=async()=>aiReply({scad,description:'Busto',assumptions:[],caveats:[]});
+ await assert.rejects(()=>runRemoteForge({action:'generate',prompt:'Busto'},{env,createSandbox:async()=>s,fetcher}),e=>e.code==='compile_size'&&/demasiado detalle/.test(e.message));
+ assert.equal(s.stops,1);
+ // Recompilar una versión guardada no gasta IA.
+ const c=fakeSandbox({bad:true});let calls=0;await assert.rejects(()=>runRemoteForge({action:'compile',scad},{env,createSandbox:async()=>c,fetcher:async()=>{calls++;}}));assert.equal(calls,0);
+});

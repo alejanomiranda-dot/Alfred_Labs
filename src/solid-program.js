@@ -176,6 +176,8 @@ export function buildSolidProgram(api,program,params){
    if(n.type==='subtract'){solid=solids[n.inputs[0]];for(const i of n.inputs.slice(1))solid=own(solid.subtract(solids[i]));}
    if(n.type==='intersect'){solid=solids[n.inputs[0]];for(const i of n.inputs.slice(1))solid=own(solid.intersect(solids[i]));}
    if(region){regions.push({color:n.color.toLowerCase(),solid:region});contains[i].add(regions.length-1);}
+   // Un relieve en colores reclama, para cada color, lo que sobresale de la placa dentro de su contorno.
+   if(n.type==='imported'&&params?.importedColors)for(const layer of params.importedColors.layers){const zone=own(own(own(new C(layer.polygons,'EvenOdd')).extrude(1000)).translate([0,0,params.importedColors.zFrom]));regions.push({color:layer.color,solid:zone});contains[i].add(regions.length-1);}
    solid=own(own(solid.rotate(n.rotation)).translate(n.position));
    if(n.rotation.some(Boolean)||n.position.some(Boolean))for(const r of contains[i])regions[r].solid=own(own(regions[r].solid.rotate(n.rotation)).translate(n.position));
    if(solid.status()!=='NoError'||solid.isEmpty())throw Error('La operación '+(solids.length+1)+' produce un sólido vacío o inválido.');

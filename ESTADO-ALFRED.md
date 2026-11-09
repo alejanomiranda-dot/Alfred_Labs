@@ -31,6 +31,11 @@ En `.tools/openscad` (de la carpeta principal, ignorado por git) está **OpenSCA
 - Vercel confirmado por ID: `prj_me6dUrAkieRMlfrWE3mnY3l753OS`, equipo `alejano910`, nombre actual `alfred_labs`. Repositorio actual: `alejanomiranda-dot/Alfred_Labs`; el remoto antiguo redirige. No existe `OPENAI_MODEL` fijada en Vercel: se utiliza el valor del código.
 - CAD conserva ahora Ñ y acentos usando Gentilis cuando la fuente elegida no los incluye, con aviso y prueba geométrica de regresión.
 
+## Pedidos que Alfred no cumplía · 09/11/2026
+
+- **Relieve en colores.** Alfred se negaba a poner los colores reales de un escudo para Bambu Studio. Ahora la generación lleva `palette` (hasta 4 colores; el primero es la placa). La imagen se pide en colores planos, o se usa la adjunta, cada píxel toma el color más cercano de la paleta y cada color se vuelve una parte del 3MF que empieza arriba de la placa (`importedColors`). Recolorear un relieve que ya existe conserva el motivo y las medidas.
+- **Busto desde una foto.** Fallaba con «OpenSCAD no pudo construir la pieza o alcanzó un límite»: un busto real pesa unos 0,93 MB de STL y el compilador en línea cortaba en 1 MB. El límite pasa a 3 MB (entra en la respuesta de Vercel en base64), el corte por tamaño se informa como tal y, si una pieza generada no compila o pesa demasiado, se corrige sola una vez con el error real, en línea y local. El worker se copia en cada pedido, así que no hace falta renovar la imagen de la VM.
+
 ## Publicación y seguimiento
 
 - [PR #5](https://github.com/alejanomiranda-dot/Alfred_Labs/pull/5) integrado en `main`: `5c5bb85`. La vista previa protegida pasó con IA real: caja 80 × 50 × 30 mm, gato y ajuste a 80,009 mm, una pieza; sin errores JavaScript ni desborde móvil. Evidencia en `artifacts/preview/resultado.json`.

@@ -4,7 +4,7 @@ El recorrido nuevo es pedido → elección de técnica → generación visual o 
 
 ## Lo que resuelve esta entrega
 
-- Escudos, dibujos, caras y motivos decorativos en relieve monocromo sobre una base plana. La imagen puede generarse desde el texto con OpenAI o adjuntarse como referencia.
+- Escudos, dibujos, caras y motivos decorativos en relieve sobre una base plana, de un filamento o en colores (hasta 4, uno por carrete del AMS). La imagen puede generarse desde el texto con OpenAI o adjuntarse como referencia.
 - Conversión local de una imagen adjunta sin generar otra ilustración. Permite invertir qué zonas se elevan, ajustar ancho/alto/base/profundidad y reconstruir sin gastar otra generación.
 - Malla cerrada: superficie de alturas, laterales conectados y dorso plano. Se construye y valida antes de ofrecer Aplicar. Los detalles separados de la imagen quedan unidos por la base.
 - Objetos con medidas mediante perfiles, recipientes, formas suaves y operaciones booleanas. Se agregaron elipsoides, cápsulas y anillos, con edición directa de sus medidas.
@@ -13,7 +13,7 @@ El recorrido nuevo es pedido → elección de técnica → generación visual o 
 
 ## Límites concretos
 
-Un relieve no es una figura orgánica completa vista desde todos los lados. Para un personaje de 360°, el asistente pide aceptar una versión geométrica estilizada; no promete reconstrucción fiel. Una ilustración generada de un escudo o personaje es una interpretación, no un archivo oficial. Una referencia ayuda a conservar identidad, pero el muestreo del relieve puede perder letras o detalles pequeños. Esta ruta imprime un solo color; las herramientas geométricas multicolor existentes siguen disponibles por separado. La revisión en Bambu Studio y la prueba física continúan siendo necesarias.
+Un relieve no es una figura orgánica completa vista desde todos los lados. Para un personaje de 360°, el asistente pide aceptar una versión geométrica estilizada; no promete reconstrucción fiel. Una ilustración generada de un escudo o personaje es una interpretación, no un archivo oficial. Una referencia ayuda a conservar identidad, pero el muestreo del relieve puede perder letras o detalles pequeños. En colores, la imagen se pide en colores planos (o se usa la adjunta), cada píxel toma el color más cercano de la paleta y cada color se vuelve una parte del 3MF que empieza arriba de la placa: las capas de la base salen de un solo filamento. Detalles más finos que unos 0,5 mm pueden perderse. La revisión en Bambu Studio y la prueba física continúan siendo necesarias.
 
 ## Verificación
 
