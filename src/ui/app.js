@@ -255,21 +255,23 @@ async function assistantFlow(prompt,attachment,epoch){
 // Relieve: con imagen adjunta se usa tal cual; si no, se genera. Cambiar medidas después no vuelve a generar.
 async function reliefFlow(result,attachment,epoch){
  const spec=validateGeneration(result.generation);addMessage('assistant',result.message);
- let image=null,invert=false,attached=false;
+ // direct: la imagen es la propia (logo o dibujo) y se convierte tal cual. reference: la foto o imagen original
+ // de la persona, que se conserva para volver a dibujar con otros colores o medidas.
+ let image=null,invert=false,direct=false,reference=attachment?.dataUrl||S.relief?.reference||null;
  const samePalette=S.relief&&(S.relief.spec.palette||[]).join()===spec.palette.join();
- if(attachment){image=attachment.dataUrl;attached=true;}
+ if(attachment&&!spec.redraw){image=attachment.dataUrl;direct=true;}
  // Una imagen propia se vuelve a convertir con los colores nuevos, sin redibujarla.
- else if(S.relief&&S.relief.spec.subject===spec.subject&&(samePalette||S.relief.attached)){image=S.relief.image;invert=S.relief.invert;attached=S.relief.attached;}
+ else if(!attachment&&S.relief&&S.relief.spec.subject===spec.subject&&(samePalette||S.relief.direct)){image=S.relief.image;invert=S.relief.invert;direct=S.relief.direct;}
  else{
-  // Pasar a colores (o cambiarlos) redibuja la imagen; si la anterior era una foto propia, se usa de referencia.
-  const reference=S.relief?.attached&&/^data:image\/(png|jpeg);base64,/.test(S.relief.image)&&S.relief.image.length<=850000?S.relief.image:null;
-  setBusy(true,spec.palette.length?'Dibujando el motivo en sus colores… puede tardar hasta dos minutos.':'Dibujando la imagen del relieve… puede tardar hasta dos minutos.');
+  // Una foto se redibuja en colores planos; pasar a colores (o cambiarlos) también redibuja, con la original de referencia.
+  if(!/^data:image\/(png|jpeg);base64,/.test(reference||'')||reference.length>850000)reference=null;
+  setBusy(true,reference&&spec.redraw?'Dibujando el retrato en colores a partir de la foto… puede tardar hasta dos minutos.':spec.palette.length?'Dibujando el motivo en sus colores… puede tardar hasta dos minutos.':'Dibujando la imagen del relieve… puede tardar hasta dos minutos.');
   const data=await post('/api/assistant',{action:'generateVisual',spec,...(reference?{imageDataUrl:reference}:{})},200000);check(epoch);image=data.imageDataUrl;
  }
  setBusy(true,spec.palette.length?'Separando los colores en partes…':'Construyendo el relieve en 3D…');await tick();
  const mesh=await reliefFromImage(image,spec,{invert});check(epoch);
  const candidate=validate(generatedParams(S.params,mesh,spec)),built=build(candidate);
- S.relief={image,spec,invert,attached};
+ S.relief={image,spec,invert,direct,reference};
  if(mesh.missing?.length)addMessage('assistant','No encontré en la imagen '+(mesh.missing.length===1?'el color '+mesh.missing[0]:'los colores '+mesh.missing.join(', '))+'; la pieza quedó con el resto.');
  apply(candidate,built,(spec.palette.length?'Relieve en '+spec.palette.length+' colores de ':'Relieve de ')+spec.width+' × '+spec.height+' mm');
 }
