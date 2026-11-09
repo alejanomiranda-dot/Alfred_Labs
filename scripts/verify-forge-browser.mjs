@@ -9,15 +9,14 @@ const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','1
 let logs='';server.stdout.on('data',b=>logs+=b);server.stderr.on('data',b=>logs+=b);
 let browser;
 try{
- await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Vite no inició: '+logs)),15000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Vite terminó: '+logs));});server.stdout.on('data',()=>{if(logs.includes('Local:')){clearTimeout(timer);resolve();}});});
+ await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Vite no inició: '+logs)),15000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Vite terminó: '+logs));});server.stdout.on('data',()=>{if(logs.replace(/\x1b\[[0-9;]*m/g,'').includes('Local:')){clearTimeout(timer);resolve();}});});
  browser=await chromium.launch({...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}),headless:true,args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
  const page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownloads:true});const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(url);await page.waitForSelector('#startForge',{state:'attached'});
- await page.locator('.more-projects>summary').click();
+ await page.goto(url);await page.waitForSelector('#forgeMode',{state:'attached'});
  assert.equal(await page.locator('#conversation .assistant').count(),0);
  assert.ok((await page.locator('#conversation .chat-message').first().boundingBox()).height<180,'El mensaje no debe heredar el tamaño del panel de chat');
  const initial=await page.locator('#dimensions').textContent();
- await page.locator('#startForge').click();await page.waitForFunction(()=>!document.getElementById('forgeExample').disabled);
+ await page.locator('#forgeMode').click();await page.waitForFunction(()=>!document.getElementById('forgeExample').disabled);
  const sampleResponse=page.waitForResponse(r=>r.url().endsWith('/api/forge')&&r.request().method()==='POST');
  await page.locator('#forgeExample').click();await page.waitForFunction(()=>document.getElementById('forgeProgress').textContent.startsWith('Vista previa lista'),{},{timeout:90000});
  const sampleResult=await (await sampleResponse).json();
@@ -66,7 +65,7 @@ try{
  await page.locator('#referenceRelief').click();await page.waitForFunction(()=>document.getElementById('visualStatus').textContent.startsWith('Relieve 3D construido'));
  assert.match(await page.locator('#proposalSummary').textContent(),/60 × 50/);
  await page.locator('#applyProposal').click();
- await page.locator('.fabrication-panel>summary').click();
+ await page.locator('.fabrication-panel>summary').click();await page.locator('#moreOutputs>summary').click();
  const projectPromise=page.waitForEvent('download');await page.locator('#exportProject').click();const project=await projectPromise;await project.saveAs('artifacts/forge/merged-relief.json');
  const restored=JSON.parse(await fs.readFile('artifacts/forge/merged-relief.json','utf8'));assert.equal(restored.sourceInfo.subject,'Luna de prueba');assert.equal(restored.forge,null);
  await page.screenshot({path:'artifacts/forge/merged-relief.png',fullPage:true});

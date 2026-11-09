@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import Module from 'manifold-3d';
 import jsQR from 'jsqr';
 import {unzipSync,strFromU8} from 'fflate';
-import {defaults,buildModel,validate} from '../src/model.js';
+import {defaults,buildModel,validate,templateFont} from '../src/model.js';
 import {stlBytes,threeMfBytes} from '../src/export.js';
 const api=await Module();api.setup();
 function assertClosed(mesh){
@@ -59,4 +59,10 @@ test('proyectos anteriores abren sin agregar decoración; opciones inválidas se
 });
 test('generar muestras reales para revisión en Bambu Studio',()=>{
  fs.mkdirSync('muestras',{recursive:true});for(const [name,p] of [['chapita-mora',defaults],['llavero-qr',{...defaults,kind:'qr',project:'Llavero QR de ejemplo',width:50,height:58,baseColor:'#fff8e9',detailColor:'#254e40'}]]){const model=buildModel(api,p);fs.writeFileSync(`muestras/${name}.stl`,stlBytes(model.combined));fs.writeFileSync(`muestras/${name}.3mf`,threeMfBytes(model));fs.writeFileSync(`muestras/${name}.json`,JSON.stringify(p,null,2));}
+});
+test('las plantillas usan letra sin serifas y conservan acentos y Ñ sin cambiar el nombre',()=>{
+ const plain=validate({...defaults,name:'MORA',phone:'11 2345 6789'}),accented=validate({...defaults,name:'ÑATO',phone:'Sofía 1234'});
+ assert.ok(templateFont(plain).data.familyName.includes('Helvetiker'));
+ assert.ok(templateFont(accented).data.familyName.includes('Gentilis'));
+ for(const p of [plain,accented]){const m=buildModel(api,p);assertClosed(m.combined);assert.ok(m.volume>0);}
 });
