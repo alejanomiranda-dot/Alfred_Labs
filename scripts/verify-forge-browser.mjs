@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import fs from 'node:fs/promises';
 import {chromium} from 'playwright';
+import {qrFromExport} from './keychain-qr-check.mjs';
 const port=5174,url='http://127.0.0.1:'+port;
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port',String(port),'--strictPort'],{stdio:['ignore','pipe','pipe']});
 let logs='';server.stdout.on('data',b=>logs+=b);server.stderr.on('data',b=>logs+=b);
@@ -11,7 +12,8 @@ try{
  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Vite no inició: '+logs)),15000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Vite terminó: '+logs));});server.stdout.on('data',()=>{if(logs.includes('Local:')){clearTimeout(timer);resolve();}});});
  browser=await chromium.launch({...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}),headless:true,args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
  const page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownloads:true});const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(url);await page.waitForSelector('#startForge');
+ await page.goto(url);await page.waitForSelector('#startForge',{state:'attached'});
+ await page.locator('.more-projects>summary').click();
  assert.equal(await page.locator('#conversation .assistant').count(),0);
  assert.ok((await page.locator('#conversation .chat-message').first().boundingBox()).height<180,'El mensaje no debe heredar el tamaño del panel de chat');
  const initial=await page.locator('#dimensions').textContent();
@@ -70,5 +72,19 @@ try{
  await page.screenshot({path:'artifacts/forge/merged-relief.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.locator('[data-workspace-view="chat"]').click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await page.locator('#forgeMode').click();await page.locator('#startBlank').click();assert.equal(await page.locator('#cadMode').getAttribute('aria-pressed'),'true');
+ // The direct keychain flow must work without any assistant request or an Apply step.
+ await page.setViewportSize({width:1440,height:1000});
+ await page.unroute('**/api/assistant');let assistantRequests=0;
+ await page.route('**/api/assistant',route=>{assistantRequests++;return route.abort();});
+ await page.locator('#startTemplate').click();
+ const colorLogo=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=c.height=64;const ctx=c.getContext('2d');for(const [color,x] of [['#602682',8],['#cd3d97',24],['#ffa543',40]]){ctx.fillStyle=color;ctx.fillRect(x,8,16,48);}return c.toDataURL('image/png').split(',')[1];});
+ await page.locator('#keychainLogo').setInputFiles({name:'logo-test.png',mimeType:'image/png',buffer:Buffer.from(colorLogo,'base64')});
+ await page.locator('#keychainLink').fill('https://mutualunir.com/');await page.waitForFunction(()=>!document.getElementById('createKeychain').disabled);
+ await page.locator('#createKeychain').click();await page.waitForFunction(()=>!document.getElementById('keychainActions').hidden);
+ assert.match(await page.locator('#keychainResultTitle').textContent(),/vista previa lista/);
+ const keychainFilePromise=page.waitForEvent('download');await page.locator('#keychainDownload').click();const keychainFile=await keychainFilePromise;await keychainFile.saveAs('artifacts/forge/keychain.3mf');
+ assert.equal(qrFromExport(await fs.readFile('artifacts/forge/keychain.3mf'),42),'https://mutualunir.com/');assert.equal(assistantRequests,0);
+ await page.locator('#keychainBackView').click();await page.screenshot({path:'artifacts/forge/keychain-back.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  assert.deepEqual(errors,[]);console.log('FORGE BROWSER OK: preview, compare, failure preserves proposal, apply, downloads, restore, discard, library, mobile, remote flow without access code, merged visual relief and export.');
 }catch(e){console.error(logs);throw e;}finally{await browser?.close();server.kill();}

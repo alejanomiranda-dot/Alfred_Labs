@@ -35,7 +35,8 @@ async function chat(prompt){
  await page.waitForFunction(()=>document.getElementById('stopAssistant').hidden,{},{timeout:160000});
 }
 try{
- await page.goto(url);await page.waitForSelector('#startForge');
+ await page.goto(url);await page.waitForSelector('#startForge',{state:'attached'});
+ await page.locator('.more-projects>summary').click();
  const initial=await page.locator('#dimensions').textContent();
  await page.locator('#startForge').click();await page.waitForFunction(()=>!document.getElementById('forgeGenerate').disabled);
  await forge('Creá un bloque rectangular macizo de 30 mm de ancho, 20 mm de profundidad y 10 mm de alto, con un agujero vertical pasante de 4 mm de diámetro centrado. Apoyado en z=0, sin texto, sin redondeos ni otros detalles.');
