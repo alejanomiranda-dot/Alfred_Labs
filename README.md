@@ -1,4 +1,4 @@
-# Alfred Labs · Taller de Vero
+# Alfred Labs
 
 Estudio de diseño 3D asistido para la Bambu Lab A2L. Unidades: milímetros. Web: https://alfredlabs.vercel.app
 
