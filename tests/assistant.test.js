@@ -29,3 +29,20 @@ test('la corrección automática viaja al modelo y las medidas esperadas se devu
  assert.ok(payload.text.format.schema.required.includes('expectedSize'));
  await assert.rejects(proposeDesign({prompt:'x',correction:{error:'a'.repeat(1600)}},'test-key',()=>{throw Error('no');}),/Corrección/);
 });
+test('el asistente elige el camino y normaliza respuestas contradictorias',async()=>{
+ const reply=r=>async()=>({ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify(r)}]}]})});
+ let r=await proposeDesign({prompt:'Un dragón de 10 cm'},'test-key',reply({route:'forge',forgePrompt:'',message:'Lo armo',canApply:true,params:defaults}));
+ assert.equal(r.route,'forge');assert.equal(r.canApply,false);assert.equal(r.forgePrompt,'Un dragón de 10 cm');
+ r=await proposeDesign({prompt:'Llavero con mi logo y QR'},'test-key',reply({route:'keychain',forgePrompt:'x',message:'Adjuntá el logo',canApply:true,params:defaults}));
+ assert.equal(r.route,'keychain');assert.equal(r.canApply,false);assert.equal(r.forgePrompt,'');
+ r=await proposeDesign({prompt:'Una caja'},'test-key',reply({route:'chat',forgePrompt:'',message:'Caja',canApply:true,params:{...defaults,kind:'free',freeDesign:{version:1,nodes:[]}}}));
+ assert.equal(r.route,'cad');
+ r=await proposeDesign({prompt:'¿Qué filamento uso?'},'test-key',reply({message:'PLA',canApply:false,params:defaults}));
+ assert.equal(r.route,'chat');
+});
+test('el origen de la pieza actual viaja al modelo y se valida',async()=>{
+ let sent;const fetcher=async(_,opts)=>{sent=JSON.parse(JSON.parse(opts.body).input.at(-1).content[0].text);return {ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify({route:'forge',forgePrompt:'Más alto',message:'Lo hago más alto.',canApply:false,params:defaults})}]}]})};};
+ const r=await proposeDesign({prompt:'Hacelo más alto',currentEngine:'forge',params:defaults},'test-key',fetcher);
+ assert.equal(sent.origenPiezaActual,'forge');assert.equal(r.route,'forge');
+ await assert.rejects(proposeDesign({prompt:'x',currentEngine:'otro'},'test-key',()=>{throw Error('no');}),/Origen/);
+});

@@ -32,6 +32,14 @@ function surfaceStats(soup,opts){
 }
 const orientations=[[0,0,0],[180,0,0],[90,0,0],[-90,0,0],[0,90,0],[0,-90,0]];
 
+// Partes que no se tocan entre sí: se imprimirían sueltas. Une vértices por posición (malla indexada o no).
+export function countParts(mesh){
+ const p=mesh.positions,k=mesh.numProp,t=mesh.triangles,ids=new Map(),index=new Int32Array(p.length/k);
+ for(let v=0;v<index.length;v++){const key=Math.round(p[v*k]*1e3)+','+Math.round(p[v*k+1]*1e3)+','+Math.round(p[v*k+2]*1e3);let id=ids.get(key);if(id===undefined){id=ids.size;ids.set(key,id);}index[v]=id;}
+ const parent=new Int32Array(ids.size).map((_,i)=>i),find=x=>{while(parent[x]!==x){parent[x]=parent[parent[x]];x=parent[x];}return x;};
+ for(let i=0;i<t.length;i+=3){const a=find(index[t[i]]),b=find(index[t[i+1]]),c=find(index[t[i+2]]);parent[b]=a;parent[find(c)]=a;}
+ const used=new Set();for(let i=0;i<t.length;i++)used.add(find(index[t[i]]));return used.size;
+}
 export function reviewPrint(mesh,volume,options={}){
  const opts={...printDefaults,...options},soup=triangles(mesh),stats=surfaceStats(soup,opts);
  // Thin walls: from each sampled face, a ray goes inward; the distance to the opposite surface is the local thickness.
@@ -53,6 +61,7 @@ export function reviewPrint(mesh,volume,options={}){
  const shell=Math.min(volume,stats.area*opts.shell),material=shell+Math.max(0,volume-shell)*opts.infill+stats.supportVolume;
  const grams=material/1000*opts.density,layers=Math.ceil(stats.height/opts.layer),seconds=material/opts.flow+layers*opts.layerSeconds+opts.warmupSeconds;
  const issues=[];
+ const parts=countParts(mesh);if(parts>1)issues.push({kind:'parts',text:`Tiene ${parts} partes que no se tocan: se imprimirían sueltas.`});
  if(stats.overhang>20)issues.push({kind:'overhang',text:`Voladizos de ${Math.round(stats.overhang)} mm² con más de ${opts.overhangDeg}°: van a necesitar soportes.`});
  // Tips of letters and sharp corners are always thin at the very end: only warn when a real area is affected.
  const typical=thinHits.sort((x,y)=>x-y)[Math.floor(thinHits.length/2)];

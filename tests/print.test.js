@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import Module from 'manifold-3d';
 import {defaults,buildModel} from '../src/model.js';
-import {reviewPrint,costOf,durationText,composeRotation} from '../src/printability.js';
+import {reviewPrint,costOf,durationText,composeRotation,countParts} from '../src/printability.js';
 const api=await Module();api.setup();
 const node=(type,extra={})=>({type,position:[0,0,0],rotation:[0,0,0],...extra});
 const free=(nodes,extra={})=>buildModel(api,{...defaults,kind:'free',freeDesign:{version:1,nodes},...extra});
@@ -28,4 +28,11 @@ test('prueba de encaje: una franja de la pieza con sus colores, apoyada en la me
  const ring=fitCoupon(api,pot,40,5);assert.deepEqual(ring.dimensions.map(Math.round),[70,70,5]);assert.ok(Math.abs(ring.volume-Math.PI*(35**2-33**2)*5)<5);
  const tag=fitCoupon(api,buildModel(api,defaults),0,3);assert.equal(tag.parts.length,2);
  assert.throws(()=>fitCoupon(api,pot,70,5),/por encima/);
+});
+test('las partes que no se tocan se cuentan y se avisan',()=>{
+ const cube=(x)=>{const v=[[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]].flatMap(([a,b,c])=>[a+x,b,c]);return v;};
+ const faces=[0,2,1,0,3,2,4,5,6,4,6,7,0,1,5,0,5,4,1,2,6,1,6,5,2,3,7,2,7,6,3,0,4,3,4,7];
+ const two={positions:new Float32Array([...cube(0),...cube(5)]),numProp:3,triangles:new Uint32Array([...faces,...faces.map(i=>i+8)])};
+ const one={positions:new Float32Array(cube(0)),numProp:3,triangles:new Uint32Array(faces)};
+ assert.equal(countParts(two),2);assert.equal(countParts(one),1);
 });

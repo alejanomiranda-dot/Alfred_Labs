@@ -1,37 +1,93 @@
 <!doctype html>
-<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#080c12"><meta name="description" content="Alfred Labs. Tu estudio de diseño 3D con asistencia inteligente."><title>Alfred Labs · Estudio 3D</title></head>
-<body>
-<header><a class="brand" href="./" aria-label="Alfred Labs, inicio"><span class="brand-icon"><svg viewBox="0 0 40 44" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m20 2 17 10v20L20 42 3 32V12Z"/><path d="m3 12 17 10 17-10M20 22v20M11 17l17-10M11 17v10l9 5 9-5V17"/></svg></span><span>ALFRED<span style="color:#93f5ce"> LABS</span><small>DESIGN BEYOND THE SCREEN</small></span></a><span class="edition"><span class="dot"></span> Bambu Lab A2L · medidas en mm</span><button id="libraryToggle" class="subtle">Mis diseños <span id="savedCount">0</span></button></header>
-<main>
-<section class="start-bar" id="studio" aria-labelledby="startTitle"><h1 id="startTitle">¿Qué querés imprimir?</h1><div class="start-options">
-<button id="startBlank" class="start-card start-main"><span>✦</span><b>Contale tu idea a Alfred</b><small>Describila con tus palabras.</small></button>
-<button id="startTemplate" class="start-card"><span>▦</span><b>Llavero · logo + QR</b><small>Tu marca adelante, el enlace atrás.</small></button>
-<button data-kind="tag" class="start-card"><span>♧</span><b>Chapita para mascota</b><small>Nombre y teléfono.</small></button>
-<button data-kind="qr" class="start-card"><span>▣</span><b>Llavero con QR</b><small>Solo un enlace.</small></button>
-<button id="startPhoto" class="start-card"><span>▧</span><b>Desde una foto</b><small>O un dibujo de referencia.</small></button>
-<button id="startModel" class="start-card"><span>◈</span><b>Modificar un STL o 3MF</b><small>Agregale o quitale algo.</small></button>
-<button id="startSpare" class="start-card"><span>⚙</span><b>Repuesto a medida</b><small>Te guío para medir.</small></button>
-<button id="startSaved" class="start-card"><span>↥</span><b>Abrir un proyecto</b><small>JSON o 3MF de Alfred.</small></button>
-</div><input id="importProject" type="file" accept=".json,.3mf" hidden></section>
-<div class="workspace">
-<aside class="editor"><div class="panel-title"><h2>Ajustes de la pieza</h2><button type="button" id="closeProperties" class="subtle">Volver al chat ✕</button></div><form id="designForm">
-<label>Nombre del proyecto<input id="project" maxlength="60" value="Chapita de Mora"></label>
-<div id="tagFields"><label>Nombre de la mascota<input id="name" maxlength="20" value="MORA"></label><label>Teléfono o identificación<input id="phone" maxlength="24" value="11 2345 6789"></label></div>
-<div id="qrFields" hidden><label>Texto o enlace del QR<input id="qrText" maxlength="180" value="https://example.com" type="text"></label><p class="hint">Los enlaces cortos permiten módulos más grandes. El QR incluye su margen libre.</p></div>
-<div id="logoFields" hidden><label class="upload">Importar logo SVG<input id="logoFile" type="file" accept=".svg,image/svg+xml"></label><p id="logoNote" class="hint">Usá un SVG con formas rellenas y textos convertidos a curvas. Se crea un relieve de un color.</p><label>Texto bajo el logo<input id="caption" maxlength="20" value="HECHO CON AMOR"></label></div>
-<p class="form-section">Forma y medidas</p>
-<label>Forma de la base<select id="shape"><option value="circle">Redonda · círculo</option><option value="round" selected>Rectángulo redondeado</option><option value="oval">Ovalada</option><option value="bone">Hueso</option></select></label>
-<div class="fields"><label>Ancho · mm<input id="width" type="number" min="25" max="100" step="1" value="45" required></label><label>Alto · mm<input id="height" type="number" min="25" max="100" step="1" value="32" required></label></div>
-<div class="fields"><label title="Espesor de la placa">Grosor de la placa · mm<input id="thickness" type="number" min="1.6" max="6" step="0.2" value="2.4" required></label><label title="Cuánto sobresalen las letras">Altura de las letras · mm<input id="relief" type="number" min="0.4" max="2" step="0.2" value="0.8" required></label></div>
-<label>Agujero para la argolla · mm<input id="hole" type="number" min="2" max="6" step="0.5" value="4" required></label>
-<p class="form-section">Colores</p><div class="fields"><label>Placa<div class="color-field"><input id="baseColor" type="color" value="#e9a08c"><span>Base</span></div></label><label>Letras<div class="color-field"><input id="detailColor" type="color" value="#fff8e9"><span>Detalle</span></div></label></div>
-</form></aside>
-<section class="viewer-panel" aria-label="Vista previa 3D"><div class="viewer-top"><span class="live"><i></i> VISTA 3D EN VIVO</span><div><button id="front" class="small">Frente</button><button id="perspective" class="small">Perspectiva</button></div></div><div id="viewer"><div id="loading">Preparando tu mesa de trabajo…</div></div><div class="view-caption"><span>Arrastrá para girar · Rueda para acercar</span><button id="resetView" class="subtle">↺ Restablecer vista</button></div><div class="specs"><div><small>DIMENSIONES</small><strong id="dimensions">45 × 32 mm</strong></div><div><small>ALTURA TOTAL</small><strong id="totalHeight">3,2 mm</strong></div><div><small>PARTES</small><strong id="partLabel">Base + relieve</strong></div></div></section>
-<aside class="output"><div class="print-column"><p class="eyebrow">1 · REVISIÓN</p><div class="check-card"><span class="check-icon">✓</span><div><strong id="statusTitle">Revisando el diseño</strong><p id="statusText">La geometría se actualiza con tus cambios.</p></div></div><div id="warnings" aria-live="polite"></div></div>
-<div class="print-column"><p class="eyebrow">2 · ARCHIVO PARA IMPRIMIR</p><button id="export3mf" class="primary full">Guardar para Bambu Studio <span>↗</span></button>
-<ol class="print-steps"><li>Abrí el 3MF en Bambu Studio: Archivo → Importar (Ctrl+I), o arrastralo a la ventana.</li><li>Asigná un filamento a cada color. Las partes son un solo objeto: no las separes.</li><li>Elegí el perfil de tu A2L, laminá y revisá la vista previa.</li><li>Imprimí una primera muestra. Si tiene QR, escanealo en la pieza real.</li></ol>
-<details id="moreOutputs" class="more-outputs"><summary>Más formatos y herramientas</summary><button id="exportStl" class="secondary full">Descargar STL unido</button><p class="hint">Una sola pieza, sin colores. Para otros laminadores o Tinkercad.</p><button id="exportProject" class="secondary full">Descargar proyecto editable</button><p class="hint">Para volver a abrirlo y seguir cambiándolo en Alfred.</p></details></div></aside>
-</div>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Alfred Labs. Contá qué querés imprimir y Alfred diseña la pieza 3D lista para tu impresora.">
+<title>Alfred Labs · Estudio 3D</title>
+<script>try{const t=localStorage.getItem('alfred-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch{}</script>
+</head>
+<body data-mode="empty">
+<header class="topbar">
+ <a class="brand" href="./" aria-label="Alfred Labs, inicio"><svg viewBox="0 0 40 44" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m20 2 17 10v20L20 42 3 32V12Z"/><path d="m3 12 17 10 17-10M20 22v20"/></svg><span>Alfred</span></a>
+ <input id="project" class="project-name" maxlength="60" aria-label="Nombre del proyecto" value="Mi pieza">
+ <span class="saved-state" id="savedState" aria-live="polite"></span>
+ <span class="spacer"></span>
+ <div class="history" role="group" aria-label="Historial de cambios">
+  <button type="button" id="undo" class="icon" aria-label="Deshacer" title="Deshacer (Ctrl+Z)" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5 3 9l4 4M3.5 9H12a5 5 0 0 1 0 10H9"/></svg></button>
+  <button type="button" id="redo" class="icon" aria-label="Rehacer" title="Rehacer (Ctrl+Shift+Z)" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m13 5 4 4-4 4M16.5 9H8a5 5 0 0 0 0 10h3"/></svg></button>
+ </div>
+ <button type="button" id="newProject" class="ghost">Nuevo</button>
+ <button type="button" id="libraryToggle" class="ghost">Mis diseños <span id="savedCount" class="count">0</span></button>
+ <button type="button" id="saveVersion" class="ghost">Guardar</button>
+ <button type="button" id="themeToggle" class="icon" aria-label="Tema: automático" title="Tema: automático"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 3v14A7 7 0 0 0 10 3Z" fill="currentColor" stroke="none"/></svg></button>
+ <button type="button" id="printOpen" class="primary">Imprimir</button>
+</header>
+<main class="studio">
+ <section class="chat" id="chatPanel" aria-label="Conversación con Alfred">
+  <div id="conversation" class="conversation" role="log" aria-live="polite" aria-relevant="additions"></div>
+  <div id="composerHome"></div>
+ </section>
+ <section class="stage" aria-label="Vista 3D de la pieza">
+  <div id="viewer"></div>
+  <div class="hero" id="hero">
+   <h1>¿Qué querés imprimir?</h1>
+   <p>Contalo con tus palabras. Podés sumar una foto, un logo o un archivo 3D.</p>
+   <div id="heroComposer"></div>
+   <div class="suggestions" id="suggestions" aria-label="Ejemplos">
+    <button type="button" data-suggestion="Un llavero con mi logo adelante y un QR a mi web atrás">Llavero con mi logo y un QR</button>
+    <button type="button" data-suggestion="Una caja organizadora de 120 × 80 × 40 mm con paredes de 2 mm">Caja organizadora de 12 cm</button>
+    <button type="button" data-suggestion="Una chapita redonda para mi perro que diga TOBY y mi teléfono">Chapita para mi perro</button>
+   </div>
+   <button type="button" id="tryExample" class="link">o mirá una pieza de ejemplo</button>
+  </div>
+  <div class="stage-empty" id="stageEmpty" hidden>Tu pieza va a aparecer acá.</div>
+  <div class="stage-tools" role="toolbar" aria-label="Vista">
+   <div class="segmented" role="group" aria-label="Ángulo">
+    <button type="button" id="viewPerspective" aria-pressed="true">3D</button>
+    <button type="button" id="viewFront" aria-pressed="false">Frente</button>
+    <button type="button" id="viewBack" aria-pressed="false">Dorso</button>
+   </div>
+   <div class="segmented" role="group" aria-label="Herramientas de medición">
+    <button type="button" id="dimsTool" aria-pressed="false" title="Mostrar medidas totales">Medidas</button>
+    <button type="button" id="rulerTool" aria-pressed="false" title="Medir entre dos puntos">Regla</button>
+    <button type="button" id="sectionTool" aria-pressed="false" title="Ver la pieza por dentro">Corte</button>
+   </div>
+  </div>
+  <div class="section-panel" id="sectionPanel" hidden><span>Corte</span><div role="group" aria-label="Eje del corte"><button type="button" data-axis="x" aria-pressed="false">X</button><button type="button" data-axis="y" aria-pressed="false">Y</button><button type="button" data-axis="z" aria-pressed="true">Z</button></div><input id="sectionAmount" type="range" min="2" max="98" value="50" aria-label="Posición del corte"></div>
+  <div class="stage-size" id="dimensions" aria-live="polite"></div>
+ </section>
+ <aside class="piece" id="piecePanel" aria-label="Tu pieza">
+  <div id="pieceStatus" class="piece-status"></div>
+  <div id="pieceControls"></div>
+ </aside>
 </main>
-<dialog id="library"><div class="panel-title"><h2>Mis diseños</h2><button id="closeLibrary" class="subtle">Cerrar ✕</button></div><p class="hint">Guardados solamente en este navegador. Descargá el proyecto editable para tener una copia en archivo.</p><div id="libraryList"></div></dialog><div id="toast" role="status"></div>
-<script type="module" src="/src/main.js"></script></body></html>
+<form id="composer" class="composer" autocomplete="off">
+ <div id="attachments" class="attachments" hidden></div>
+ <label for="prompt" class="sr-only">Mensaje para Alfred</label>
+ <textarea id="prompt" rows="1" maxlength="2000" placeholder="Describí la pieza que querés imprimir…"></textarea>
+ <div class="composer-row">
+  <div class="attach">
+   <button type="button" id="attachToggle" class="icon" aria-label="Adjuntar" aria-expanded="false" aria-controls="attachMenu"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg></button>
+   <div id="attachMenu" class="menu" role="menu" hidden>
+    <button type="button" role="menuitem" data-attach="image">Foto, dibujo o logo</button>
+    <button type="button" role="menuitem" data-attach="model">Archivo 3D (STL o 3MF)</button>
+    <button type="button" role="menuitem" data-attach="project">Abrir un proyecto guardado</button>
+    <button type="button" role="menuitem" data-attach="spare">Guía para medir un repuesto</button>
+   </div>
+  </div>
+  <span class="composer-hint" id="composerHint">Enter para enviar · Shift + Enter, nueva línea</span>
+  <button type="button" id="stopAssistant" class="ghost" hidden>Detener</button>
+  <button type="submit" id="askAssistant" class="send" aria-label="Enviar"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5"/></svg></button>
+ </div>
+</form>
+<dialog id="printDialog" class="sheet" aria-labelledby="printTitle"></dialog>
+<dialog id="library" class="sheet" aria-labelledby="libraryTitle"><div class="sheet-head"><h2 id="libraryTitle">Mis diseños</h2><button type="button" class="icon" id="closeLibrary" aria-label="Cerrar"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></div><p class="hint">Se guardan en este navegador. Para tener una copia en archivo, descargá el proyecto editable desde Imprimir.</p><div id="libraryList"></div></dialog>
+<input id="imageFile" type="file" accept="image/png,image/jpeg" hidden>
+<input id="modelFile" type="file" accept=".stl,.3mf" hidden>
+<input id="importProject" type="file" accept=".json,.3mf" hidden>
+<div id="toast" role="status"></div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -2,19 +2,20 @@
 
 Estudio de diseño 3D asistido para la Bambu Lab A2L. Unidades: milímetros. Web: https://alfredlabs.vercel.app
 
-## Llavero con logo adelante y QR atrás
+## Cómo funciona
 
-La entrada **Llavero · logo + QR** permite cargar un PNG/JPG y escribir el enlace. Construye una sola pieza multicolor de 50 × 60 × 3,8 mm, con agujero de 4 mm y QR de color al ras del dorso. Se puede cambiar el tamaño, revisar ambas caras y guardar el 3MF directamente desde la vista previa, sin pasar por el chat ni aplicar primero la propuesta. El logo conserva sus contornos; se reduce a hasta tres colores sólidos más la base clara, simplificando degradados. No usa IA.
+Una sola pantalla y una sola conversación. Al entrar, Alfred pregunta **«¿Qué querés imprimir?»**; se responde con palabras y, si hace falta, con una foto, un logo o un archivo 3D (botón **+**). **«o mirá una pieza de ejemplo»** abre una pieza precompilada sin usar IA.
 
-El 3MF conserva también el proyecto editable: se puede volver a abrir desde **Otros proyectos y herramientas → Abrir un proyecto** y cambiar el enlace sin cargar otra vez el logo. [Experiencia real con Mutual UNIR, mejoras y límites](EXPERIENCIA-LLAVERO.md).
+Alfred decide cómo construir cada pedido, sin que la persona elija un motor:
 
-## Alfred Forge · experimental
+- **Plantillas** (chapitas, llaveros QR) y **piezas por medidas** (cajas, soportes, recipientes, repuestos): operaciones geométricas verificadas contra las medidas pedidas; si no cierran, se corrigen solas hasta tres veces.
+- **Llavero con logo adelante y QR atrás**: se arma en el navegador con el archivo original, sin IA ni generación de imágenes. Si falta el logo o el enlace, Alfred lo pide. [Experiencia real con Mutual UNIR](EXPERIENCIA-LLAVERO.md).
+- **Relieves** (escudos, dibujos, rostros): con una imagen adjunta se usa tal cual; si no, se genera con OpenAI. Cambiar medidas o profundidad después no vuelve a generar.
+- **Generador avanzado** (OpenSCAD): formas orgánicas o esculpidas, y respaldo cuando el modelado por medidas no alcanza. Cada corrección parte de la versión anterior; las versiones y la fuente `.scad` quedan en «Avanzado».
 
-Esta versión reúne Alfred Forge y el motor creativo de relieves y geometría nativa. Forge incluye generación OpenSCAD, vista previa sin aplicar, correcciones, historial de fuentes y exportación. Para probar: `npm ci`, `npm run forge:check`, `npm run dev`; abrí `http://127.0.0.1:5173` y elegí **Alfred Forge**. La muestra incluida funciona sin IA y sin OpenSCAD instalado. En Windows: **Preparar taller.cmd**, luego **Iniciar taller.cmd**.
+Los cambios se aplican directo y se pueden **deshacer y rehacer** (también Ctrl+Z / Ctrl+Shift+Z). La columna **Tu pieza** muestra solo los controles de ese tipo de pieza y arriba indica si está **lista para imprimir** o qué revisar (ver dónde, apoyarla mejor). **Imprimir** guarda el 3MF para Bambu Studio y explica los pasos; los demás formatos están en «Más formatos y herramientas». Tema claro u oscuro según el sistema, con selector manual.
 
-[Pruebas reales en Windows, resultados y archivos generados](PRUEBAS-LOCALES.md). OpenSCAD portable se detecta automáticamente en `.tools/openscad/openscad.com`; esa carpeta y `.env.local` están excluidas de Git.
-
-Leé la [guía de prueba local y límites](experiments/alfred-forge/README.md). La Preview en Vercel usa un compilador aislado en Vercel Sandbox sin pedir código de acceso. El modo local sigue disponible; OpenSCAD nunca se ejecuta dentro de Vercel Functions.
+Forge local necesita OpenSCAD: `npm run forge:check`. En Windows: **Preparar taller.cmd**, luego **Iniciar taller.cmd**. OpenSCAD portable se detecta en `.tools/openscad/openscad.com` (o `OPENSCAD_BIN`). En Vercel se compila en un Vercel Sandbox aislado; OpenSCAD nunca corre dentro de Vercel Functions. [Pruebas en Windows](PRUEBAS-LOCALES.md) · [Guía de Forge y límites](experiments/alfred-forge/README.md).
 
 ## Uso local
 
@@ -27,25 +28,12 @@ npm run dev
 
 Abrir `http://127.0.0.1:5173/` (o hacer doble clic en **Iniciar taller.cmd**). `npm test` verifica sólidos cerrados, medidas, colores, importación, imprimibilidad y la protección del asistente. `npm run build` prepara `dist`. `npm run verify` prueba, compila y comprueba que la clave local no aparezca en la salida pública.
 
-## Formas de empezar
-
-- **Desde cero**: la guía pregunta lo que falta y construye la pieza.
-- **Desde foto o dibujo**: la guía describe la imagen por tramos y pregunta medidas. «Medir en la foto» calcula medidas reales con una referencia de escala (tarjeta de 85,6 mm, regla).
-- **Desde un archivo 3D**: STL o 3MF (también de Bambu Studio). Se valida como sólido cerrado y, si es muy pesado, se simplifica con tolerancia de centésimas. La guía recibe sus cortes reales, no la malla.
-- **Repuesto a medida**: dibujo de qué medir con calibre, tipo de encastre y holgura.
-- **Plantillas**: chapitas, QR y logos. **Abrir un proyecto**: JSON editable.
-
 ## Diseño
 
-- Operaciones: bloques, cajas abiertas, cilindros y conos, recipientes, piezas por perfil (torno), esferas, contornos, texto, uniones, huecos e intersecciones. Pieza importada como primera operación.
-- Texto e íconos (corazón, huellita, estrella, hoja, flor, hueso, casa, luna) grabados, en relieve, incrustados o **alrededor** de superficies curvas. Tres tipografías.
-- **Multicolor**: color por operación, hasta 4 colores (AMS). El 3MF lleva una parte por color.
-- **Ajuste directo** de cada operación, con deshacer y rehacer.
-- Cada propuesta de la guía se construye y se compara con las medidas que declaró; si no coincide, se corrige sola antes de mostrarse. Se ve como **vista previa** translúcida antes de aplicarla.
-- **Chat con Alfred**: Enter envía, Shift + Enter agrega una línea. Podés detener la consulta, ajustar una propuesta pendiente o hacer preguntas sin perderla. **Aplicar** cambia la pieza; **Descartar** conserva el diseño actual. En celular, las pestañas alternan entre el chat y la pieza 3D. Ajustes y fabricación se abren a demanda.
-- **Formas precisas**: «Redonda · círculo» tiene un único diámetro; «Rectángulo redondeado» conserva la forma de los proyectos anteriores (`round`). «Ovalada» permite ancho y alto distintos. Las cotas del visor distinguen propuesta sin aplicar y pieza actual.
-- **Motor creativo**: el chat distingue objetos con medidas de motivos visuales. Escudos, dibujos, rostros y galaxias pueden convertirse en **relieves monocromos con fondo plano**, desde una ilustración de OpenAI o una imagen adjunta. Ancho, alto, base y profundidad se ajustan antes de aplicar; recalcular medidas sobre la misma imagen no vuelve a llamar a OpenAI.
-- **Más geometría nativa**: elipsoides, cápsulas y anillos, combinables con el resto de las operaciones. Las esculturas orgánicas detalladas de 360° siguen fuera del motor actual; una versión geométrica estilizada requiere aceptar esa simplificación. No se integra Meshy ni se requiere otra cuenta.
+- Operaciones: bloques, cajas abiertas, cilindros y conos, recipientes, piezas por perfil (torno), esferas, elipsoides, cápsulas, anillos, contornos, texto, uniones, huecos e intersecciones. Un STL o 3MF importado es la primera operación.
+- Texto e íconos grabados, en relieve, incrustados o alrededor de superficies curvas. Las plantillas usan Helvetiker Bold y pasan a Gentilis si el texto lleva acentos o Ñ, para no alterar el nombre.
+- **Multicolor**: hasta 4 colores (AMS). El 3MF lleva una parte por color.
+- «Medir» sobre una foto adjunta calcula medidas reales con una referencia de escala. La guía para repuestos indica qué medir con calibre, el encastre y la holgura.
 
 ## Revisión y salida
 
