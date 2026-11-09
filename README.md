@@ -9,7 +9,7 @@ Una sola pantalla y una sola conversación. Al entrar, Alfred pregunta **«¿Qu�
 Alfred decide cómo construir cada pedido, sin que la persona elija un motor:
 
 - **Plantillas** (chapitas, llaveros QR) y **piezas por medidas** (cajas, soportes, recipientes, repuestos): operaciones geométricas verificadas contra las medidas pedidas; si no cierran, se corrigen solas hasta tres veces.
-- **Llavero con logo adelante y QR atrás**: se arma en el navegador con el archivo original, sin IA ni generación de imágenes. Si falta el logo o el enlace, Alfred lo pide. [Experiencia real con Mutual UNIR](EXPERIENCIA-LLAVERO.md).
+- **Llavero con logo adelante y QR atrás**: se arma en el navegador con los archivos originales, sin IA ni generación de imágenes. Adjuntá el logo y después la imagen del QR en otro mensaje, o escribí su enlace. Alfred lee el QR localmente y conserva el logo entre mensajes; si no logra leerlo, lo avisa sin reemplazar la marca. La base tiene aristas biseladas y el QR queda al ras del dorso. [Experiencia real con Mutual UNIR](EXPERIENCIA-LLAVERO.md).
 - **Relieves** (escudos, dibujos, rostros): con una imagen adjunta se usa tal cual; si no, se genera con OpenAI. Cambiar medidas o profundidad después no vuelve a generar.
 - **Generador avanzado** (OpenSCAD): formas orgánicas o esculpidas, y respaldo cuando el modelado por medidas no alcanza. Cada corrección parte de la versión anterior; las versiones y la fuente `.scad` quedan en «Avanzado».
 

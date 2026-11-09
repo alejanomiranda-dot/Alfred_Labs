@@ -4,6 +4,7 @@ import {spawn} from 'node:child_process';
 import fs from 'node:fs/promises';
 import {chromium} from 'playwright';
 import {qrFromExport} from './keychain-qr-check.mjs';
+import QRCode from 'qrcode';
 const port=5174,url='http://127.0.0.1:'+port;
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port',String(port),'--strictPort'],{stdio:['ignore','pipe','pipe']});
 let logs='';server.stdout.on('data',b=>logs+=b);server.stderr.on('data',b=>logs+=b);
@@ -14,7 +15,8 @@ try{
  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Vite no inició: '+logs)),15000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Vite terminó: '+logs));});server.stdout.on('data',()=>{if(logs.replace(/\x1b\[[0-9;]*m/g,'').includes('Local:')){clearTimeout(timer);resolve();}});});
  browser=await chromium.launch({...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}),headless:true,args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
  const page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownloads:true});const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.addInitScript(()=>{window.showSaveFilePicker=undefined;});
+ // The default export must download even when an embedded browser exposes a broken picker.
+ await page.addInitScript(()=>{window.showSaveFilePicker=()=>new Promise(()=>{});});
  await fs.mkdir('artifacts/forge',{recursive:true});
  const dims=()=>page.locator('#dimensions').textContent();
  const lastAssistant=()=>page.locator('.msg.assistant').last().textContent();
@@ -96,12 +98,23 @@ try{
  const calls=assistantBodies.length;assistantReply=null;
  const logo=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=c.height=64;const ctx=c.getContext('2d');for(const [color,x] of [['#602682',8],['#cd3d97',24],['#ffa543',40]]){ctx.fillStyle=color;ctx.fillRect(x,8,16,48);}return c.toDataURL('image/png').split(',')[1];});
  await page.locator('#imageFile').setInputFiles({name:'logo-test.png',mimeType:'image/png',buffer:Buffer.from(logo,'base64')});
- await send('Un llavero con mi logo adelante y un QR atrás a mutualunir.com');
+ await send('Un llavero con mi logo adelante y un QR atrás');
+ assert.match(await lastAssistant(),/Adjuntá la imagen del QR/);
+ // An unreadable QR must not replace the logo already supplied.
+ await page.locator('#imageFile').setInputFiles({name:'qr-borroso.png',mimeType:'image/png',buffer:Buffer.from(logo,'base64')});
+ await send('Este es el QR del dorso');assert.match(await lastAssistant(),/No pude leer el QR/);
+ const qrImage=await QRCode.toBuffer('https://mutualunir.com/',{width:1000,margin:4,errorCorrectionLevel:'M'});
+ await page.locator('#imageFile').setInputFiles({name:'qr-dorso.png',mimeType:'image/png',buffer:qrImage});
+ await send('Este es el QR del dorso, conservá mi logo');
  assert.match(await dims(),/^50 × 60/);assert.equal(assistantBodies.length,calls);
+ assert.match(await lastAssistant(),/Leí el destino de qr-dorso.png/);
  await page.locator('#viewBack').click();await page.screenshot({path:'artifacts/forge/llavero-dorso.png'});
  await page.locator('#printOpen').click();
  const keychainPromise=page.waitForEvent('download');await page.locator('#export3mf').click();await (await keychainPromise).saveAs('artifacts/forge/llavero.3mf');
  assert.equal(qrFromExport(await fs.readFile('artifacts/forge/llavero.3mf'),42),'https://mutualunir.com/');
+ const keychainFiles=(await import('fflate')).unzipSync(await fs.readFile('artifacts/forge/llavero.3mf'));
+ const keychainParams=JSON.parse(new TextDecoder().decode(keychainFiles['Metadata/taller-de-vero.json']));
+ assert.equal(keychainParams.keychain.name,'logo-test.png','El QR adjunto no reemplaza el logo original');
  await page.locator('#printDialog [data-close]').click();
 
  // 10. Abrir desde «Mis diseños» recupera la pieza de Forge guardada.

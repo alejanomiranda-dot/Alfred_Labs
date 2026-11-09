@@ -101,7 +101,14 @@ export function buildKeychain(api,p){
   // Reuse a sufficiently dark logo color; otherwise consolidate the darkest into purple-black.
   if((luminance(colorRgb(p.baseColor))+.05)/(luminance(colorRgb(darkest))+.05)<4.5){qrColor='#30213d';const solid=byColor.get(darkest);byColor.delete(darkest);byColor.set(qrColor,byColor.has(qrColor)?own(M.union([byColor.get(qrColor),solid])):solid);}
   const inset=own(back.extrude(.6));byColor.set(qrColor,byColor.has(qrColor)?own(M.union([byColor.get(qrColor),inset])):inset);
-  const base=own(own(base2.extrude(t)).subtract(inset)),all=own(M.union([base,...byColor.values()]));
+  // Convex outer shell: small lower chamfer and 0.4 mm upper bevel, then drill the ring hole.
+  // The QR stays flush on z=0 and the full width is retained around the middle.
+  const lower=own(own(own(outline.offset(-.2)).extrude(.001)).translate([0,0,0]));
+  const middle=own(own(outline.extrude(t-.6)).translate([0,0,.2]));
+  const upper=own(own(own(outline.offset(-.4)).extrude(.001)).translate([0,0,t-.001]));
+  const shell=own(M.hull([lower,middle,upper]));
+  const bore=own(hole.extrude(t));
+  const base=own(own(shell.subtract(bore)).subtract(inset)),all=own(M.union([base,...byColor.values()]));
   if(all.status()!=='NoError'||all.isEmpty())throw Error('No se pudo cerrar el llavero. Revisá el logo.');
   const mesh=solid=>{const m=solid.getMesh();return {numProp:m.numProp,positions:new Float32Array(m.vertProperties),triangles:new Uint32Array(m.triVerts)};};
   const parts=[{mesh:mesh(base),color:p.baseColor,name:'Base clara'},...[...byColor].map(([color,solid])=>({mesh:mesh(solid),color,name:color===qrColor?'Logo y QR del dorso':'Logo del frente'}))];

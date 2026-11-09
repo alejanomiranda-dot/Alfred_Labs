@@ -26,6 +26,10 @@ test('llavero de dos caras: logo real por regiones, dorso plano, sólido y hasta
  const partsVolume=model.parts.reduce((sum,part)=>{const raw=new api.Mesh({numProp:part.mesh.numProp,vertProperties:part.mesh.positions,triVerts:part.mesh.triangles}),solid=new api.Manifold(raw);const volume=solid.volume();solid.delete();return sum+volume;},0);
  assert.ok(Math.abs(partsVolume-model.volume)<.001,'Los colores no se solapan y completan la pieza');
  assert.equal(qrFromExport(threeMfBytes(model),model.qr.size),url,'El QR exportado se lee desde el dorso, sin espejo');
+ const vertices=model.base.positions,k=model.base.numProp;
+ const boundsAt=z=>{const points=[];for(let i=0;i<vertices.length;i+=k)if(Math.abs(vertices[i+2]-z)<1e-4)points.push(Math.abs(vertices[i]));return Math.max(...points);};
+ assert.ok(boundsAt(0)<25&&boundsAt(3.2)<25,'Ambas aristas exteriores tienen bisel');
+ assert.equal(boundsAt(.2),25,'El canto central conserva el ancho nominal');
 });
 
 test('proyecto y 3MF conservan el logo, las dos caras y el destino exacto del QR',()=>{

@@ -16,13 +16,13 @@
   "dependencies": {
     "@vercel/sandbox": "^3.9.1",
     "fflate": "^0.8.2",
+    "jsqr": "^1.4.0",
     "manifold-3d": "^3.3.2",
     "qrcode": "^1.5.4",
     "three": "^0.181.0",
     "three-mesh-bvh": "0.9.16"
   },
   "devDependencies": {
-    "jsqr": "^1.4.0",
     "playwright": "^1.65.0",
     "vite": "^7.2.2"
   },
