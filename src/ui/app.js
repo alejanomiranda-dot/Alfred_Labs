@@ -11,7 +11,7 @@ import {saveVersion,listProjects,deleteProject,countProjects,migrateLegacy,prune
 import {thumbnail} from '../studio-output.js';
 import {readMeshFile} from '../mesh-import.js';
 import {prepareImport,describeImport} from '../solid-program.js';
-import {projectFromBytes} from '../project-file.js';
+import {projectFromBytes,savedProjectIn} from '../project-file.js';
 import {readKeychainLogo,keychainUrl,isTwoSidedKeychain,planKeychainColorChange,recolorKeychain,keychainLogoNotes,colorName} from '../keychain.js';
 import {readQrImage} from '../qr-image.js';
 import {reliefFromImage,generatedParams} from '../relief.js';
@@ -487,11 +487,17 @@ $('modelFile').onchange=async()=>{
  try{
   if(!S.api)throw Error('El motor 3D todavía se está preparando. Probá en unos segundos.');if(file.size>80e6)throw Error('El archivo supera 80 MB.');
   toast('Leyendo '+file.name+'…');await tick();
-  const read=readMeshFile(file.name,new Uint8Array(await file.arrayBuffer())),prepared=prepareImport(S.api,read);
+  const bytes=new Uint8Array(await file.arrayBuffer()),saved=savedProjectIn(file.name,bytes);let warning='';
+  // A 3MF saved by Alfred opens as the project it is (parts, colors, logo and QR), not as a single-color mesh.
+  if(saved){
+   try{const candidate=validate(saved),built=build(candidate);resetProject(candidate);refresh({built});addMessage('assistant','Abrí tu proyecto «'+candidate.project+'» tal como lo guardaste: '+sizeText(S.model.dimensions)+(S.model.parts?.length>1?', con sus '+S.model.parts.length+' partes y colores':'')+'. Podés seguir cambiándolo.');return;}
+   catch(e){warning='Este 3MF es un proyecto de Alfred, pero no lo pude abrir como proyecto ('+e.message+'). Lo traje solo como forma 3D, de un color. ';}
+  }
+  const read=readMeshFile(file.name,bytes),prepared=prepareImport(S.api,read);
   resetProject({...emptyParams(),project:read.name.slice(0,60)||'Pieza importada',importedMesh:prepared.mesh,freeDesign:{version:1,nodes:[{type:'imported',position:[0,0,0],rotation:[0,0,0]}]}});
   refresh();if(!S.model)throw Error('No se pudo construir una pieza con ese archivo.');
   const notes=[read.parts>1?'Tenía '+read.parts+' partes y las uní en una sola.':'',prepared.tolerance?'La simplifiqué de '+prepared.original.toLocaleString('es-AR')+' a '+prepared.triangles.toLocaleString('es-AR')+' triángulos para trabajar más ágil.':''].filter(Boolean).join(' ');
-  addMessage('assistant','Abrí «'+read.name+'»: mide '+sizeText(S.model.dimensions)+'. '+notes+' ¿Qué le cambiamos? Por ejemplo: grabarle un nombre, agregarle un agujero o recortarla.');
+  addMessage('assistant',warning+'Abrí «'+read.name+'»: mide '+sizeText(S.model.dimensions)+'. '+notes+' ¿Qué le cambiamos? Por ejemplo: grabarle un nombre, agregarle un agujero o recortarla.');
  }catch(e){toast('No se pudo importar: '+e.message);}
 };
 $('importProject').onchange=async()=>{

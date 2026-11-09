@@ -8,7 +8,9 @@ import {traceColorLogo,keychainUrl,validateKeychain,keychainColors,keychainLogoN
 import {contourField,blurField,ringArea} from '../src/trace.js';
 import {isTwoSidedKeychain} from '../src/keychain.js';
 import {threeMfBytes} from '../src/export.js';
-import {projectFromBytes} from '../src/project-file.js';
+import {projectFromBytes,savedProjectIn} from '../src/project-file.js';
+import {stlBytes} from '../src/export.js';
+import {zipSync,strToU8} from 'fflate';
 const api=await Module();api.setup();
 const url='https://mutualunir.com/';
 function logo(){
@@ -150,4 +152,13 @@ test('el pedido real con error de tipeo pinta solo el nombre, y si no dice qué 
  const unclear=planKeychainColorChange(base,'ponelo en negro');assert.equal(unclear.patch,undefined);assert.match(unclear.message,/^¿Qué parte querés en negro\?/);
  const all=planKeychainColorChange(base,'todo el logo en negro');assert.ok(all.patch.keychain.layers.every(l=>l.color==='#1b1b1b'));
  assert.equal(parseKeychainColorRequest('la figura de debajo en azul',base.keychain).region,'marca');
+});
+
+test('un 3MF guardado por Alfred abierto como archivo 3D vuelve como proyecto, con sus partes y colores',()=>{
+ const base=brandParams(),plan=planKeychainColorChange(base,'el nombre en negro'),model=buildModel(api,validate({...base,...plan.patch})),bytes=threeMfBytes(model);
+ const saved=savedProjectIn('Llavero-LOGO-SIN-FONDO-1.3mf',bytes);assert.ok(saved,'Se reconoce el proyecto dentro del 3MF');
+ const again=buildModel(api,validate(saved));
+ assert.deepEqual(again.parts.map(p=>[p.name,p.color]),model.parts.map(p=>[p.name,p.color]),'Mismas partes y colores, el texto sigue en negro');
+ assert.equal(savedProjectIn('pieza.stl',stlBytes(model.combined)),null,'Un STL se importa como forma');
+ assert.equal(savedProjectIn('otro.3mf',zipSync({'3D/3dmodel.model':strToU8('<model/>')})),null,'Un 3MF de otro programa se importa como forma');
 });
