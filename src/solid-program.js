@@ -209,7 +209,8 @@ export function buildSolidProgram(api,program,params){
    parts=[{mesh:toMesh(rest),color:base,name:'Base'},...[...byColor].reverse().map(([color,piece],k)=>({mesh:toMesh(piece),color,name:'Color '+(k+2)}))];
   }
   if(mesh.triangles.length/3>200000)throw Error('La pieza generada es demasiado compleja.');
-  const components=solid.decompose();const count=components.length;components.forEach(s=>s.delete());
+  // Un hueco cerrado sale como componente de volumen negativo: no es un volumen separado.
+  const components=solid.decompose();const count=components.filter(s=>s.volume()>0).length;components.forEach(s=>s.delete());
   return {params,base:parts?parts[0].mesh:mesh,detail:{numProp:3,positions:new Float32Array(),triangles:new Uint32Array()},parts,combined:mesh,volume:solid.volume(),dimensions,totalHeight:dimensions[2],operationBounds,warnings:['Diseño libre: revisar medidas, paredes, encastres y soportes en Bambu Studio. No es una validación de resistencia.',...notes,...(count>1?[`La pieza contiene ${count} volúmenes separados. Revisá si deben estar unidos.`]:[])],qr:null};
  }finally{for(const x of owned.reverse())x.delete();}
 }
