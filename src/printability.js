@@ -32,6 +32,31 @@ function surfaceStats(soup,opts){
 }
 const orientations=[[0,0,0],[180,0,0],[90,0,0],[-90,0,0],[0,90,0],[0,-90,0]];
 
+// Partes que no se tocan entre sí: se imprimirían sueltas. Une vértices por posición (malla indexada o no).
+// Componentes conectados de la malla, de mayor a menor superficie, con su caja envolvente.
+export function partsOf(mesh){
+ const p=mesh.positions,k=mesh.numProp,t=mesh.triangles,ids=new Map(),index=new Int32Array(p.length/k);
+ for(let v=0;v<index.length;v++){const key=Math.round(p[v*k]*1e3)+','+Math.round(p[v*k+1]*1e3)+','+Math.round(p[v*k+2]*1e3);let id=ids.get(key);if(id===undefined){id=ids.size;ids.set(key,id);}index[v]=id;}
+ const parent=new Int32Array(ids.size).map((_,i)=>i),find=x=>{while(parent[x]!==x){parent[x]=parent[parent[x]];x=parent[x];}return x;};
+ for(let i=0;i<t.length;i+=3){const a=find(index[t[i]]),b=find(index[t[i+1]]),c=find(index[t[i+2]]);parent[b]=a;parent[find(c)]=a;}
+ const groups=new Map(),at=i=>[p[t[i]*k],p[t[i]*k+1],p[t[i]*k+2]];
+ for(let i=0;i<t.length;i+=3){
+  const root=find(index[t[i]]);let g=groups.get(root);if(!g){g={triangles:[],area:0,min:[Infinity,Infinity,Infinity],max:[-Infinity,-Infinity,-Infinity]};groups.set(root,g);}
+  const A=at(i),B=at(i+1),C=at(i+2),u=[B[0]-A[0],B[1]-A[1],B[2]-A[2]],w=[C[0]-A[0],C[1]-A[1],C[2]-A[2]];
+  g.area+=Math.hypot(u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0])/2;g.triangles.push(i/3);
+  for(const P of [A,B,C])for(let j=0;j<3;j++){g.min[j]=Math.min(g.min[j],P[j]);g.max[j]=Math.max(g.max[j],P[j]);}
+ }
+ return [...groups.values()].sort((x,y)=>y.area-x.area);
+}
+// Malla con solo los triángulos de las partes elegidas (para quitar detalles sueltos diminutos).
+export function keepParts(mesh,parts){const tri=[];for(const g of parts)for(const i of g.triangles)tri.push(mesh.triangles[i*3],mesh.triangles[i*3+1],mesh.triangles[i*3+2]);return {...mesh,triangles:new Uint32Array(tri)};}
+export function countParts(mesh){
+ const p=mesh.positions,k=mesh.numProp,t=mesh.triangles,ids=new Map(),index=new Int32Array(p.length/k);
+ for(let v=0;v<index.length;v++){const key=Math.round(p[v*k]*1e3)+','+Math.round(p[v*k+1]*1e3)+','+Math.round(p[v*k+2]*1e3);let id=ids.get(key);if(id===undefined){id=ids.size;ids.set(key,id);}index[v]=id;}
+ const parent=new Int32Array(ids.size).map((_,i)=>i),find=x=>{while(parent[x]!==x){parent[x]=parent[parent[x]];x=parent[x];}return x;};
+ for(let i=0;i<t.length;i+=3){const a=find(index[t[i]]),b=find(index[t[i+1]]),c=find(index[t[i+2]]);parent[b]=a;parent[find(c)]=a;}
+ const used=new Set();for(let i=0;i<t.length;i++)used.add(find(index[t[i]]));return used.size;
+}
 export function reviewPrint(mesh,volume,options={}){
  const opts={...printDefaults,...options},soup=triangles(mesh),stats=surfaceStats(soup,opts);
  // Thin walls: from each sampled face, a ray goes inward; the distance to the opposite surface is the local thickness.
@@ -53,6 +78,7 @@ export function reviewPrint(mesh,volume,options={}){
  const shell=Math.min(volume,stats.area*opts.shell),material=shell+Math.max(0,volume-shell)*opts.infill+stats.supportVolume;
  const grams=material/1000*opts.density,layers=Math.ceil(stats.height/opts.layer),seconds=material/opts.flow+layers*opts.layerSeconds+opts.warmupSeconds;
  const issues=[];
+ const parts=countParts(mesh);if(parts>1)issues.push({kind:'parts',text:`Tiene ${parts} partes que no se tocan: se imprimirían sueltas.`});
  if(stats.overhang>20)issues.push({kind:'overhang',text:`Voladizos de ${Math.round(stats.overhang)} mm² con más de ${opts.overhangDeg}°: van a necesitar soportes.`});
  // Tips of letters and sharp corners are always thin at the very end: only warn when a real area is affected.
  const typical=thinHits.sort((x,y)=>x-y)[Math.floor(thinHits.length/2)];

@@ -34,7 +34,7 @@ export async function runRemoteForge(raw,{env=process.env,signal,createSandbox=o
    const data=JSON.parse(report.toString());
    if(!data.ok)throw fail(data.error||'No se pudo construir la pieza.',422,data.code||'compile_failed');
    const files={};
-   for(const ext of ['stl','3mf']){
+   for(const ext of ['stl']){
     if(!Number.isInteger(data.files?.[ext])||data.files[ext]<100||data.files[ext]>=1024*1024)throw fail('La pieza tiene demasiados detalles para la prueba en línea.',422,'compile_size');
     const bytes=await sandbox.readFileToBuffer({path:'/vercel/sandbox/forge/piece.'+ext},{signal});
     if(!bytes||bytes.length!==data.files[ext])throw fail('El archivo compilado está incompleto.',422,'compile_failed');

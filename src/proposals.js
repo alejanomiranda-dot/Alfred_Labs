@@ -10,7 +10,7 @@ export function checkProposal(api,base,result,pending=null){
  const candidate=validate({...base,...source,...result.params}),built=buildModel(api,candidate);
  if(candidate.kind==='free'&&result.expectedSize){
   const got=built.dimensions,want=result.expectedSize;
-  if(got.some((v,i)=>Math.abs(v-want[i])>Math.max(1,want[i]*.03)))throw Error('La pieza construida mide '+sizeText(got)+' pero se esperaba '+sizeText(want)+'. Ubicación real de cada operación (mm, antes de centrar): '+built.operationBounds.map(o=>o.index+' '+o.type+' X '+o.min[0].toFixed(1)+'..'+o.max[0].toFixed(1)+' Y '+o.min[1].toFixed(1)+'..'+o.max[1].toFixed(1)+' Z '+o.min[2].toFixed(1)+'..'+o.max[2].toFixed(1)).join('; ')+'.');
+  if(got.some((v,i)=>want[i]>0&&Math.abs(v-want[i])>Math.max(1,want[i]*.03)))throw Error('La pieza construida mide '+sizeText(got)+' pero se esperaba '+sizeText(want)+'. Ubicación real de cada operación (mm, antes de centrar): '+built.operationBounds.map(o=>o.index+' '+o.type+' X '+o.min[0].toFixed(1)+'..'+o.max[0].toFixed(1)+' Y '+o.min[1].toFixed(1)+'..'+o.max[1].toFixed(1)+' Z '+o.min[2].toFixed(1)+'..'+o.max[2].toFixed(1)).join('; ')+'.');
  }
  if(JSON.stringify(candidate)===JSON.stringify(base))throw Error('La propuesta no contiene cambios en la pieza.');
  return {candidate,built};

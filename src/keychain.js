@@ -108,3 +108,6 @@ export function buildKeychain(api,p){
   return {params:{...p,qrText:url},base:parts[0].mesh,detail:{numProp:3,positions:new Float32Array(),triangles:new Uint32Array()},parts,combined:mesh(all),volume:all.volume(),dimensions:[w,h,t+r],totalHeight:t+r,backArea:back.area(),warnings:[`QR en el dorso: módulos de ${module.toFixed(2)} mm y margen libre de 4 módulos. Escaneá una primera impresión antes de entregar.`,`Logo adaptado a ${logo.layers.length} colores sólidos, sin regenerarlo con IA. Los degradados se simplifican para imprimir con hasta 4 filamentos.`,'Dorso plano con QR de color al ras; asigná los filamentos del 3MF en Bambu Studio.'],qr:{matrix,size,module,quietZone:4,face:'back',offsetY:-3,color:qrColor}};
  }finally{for(const item of owned.reverse())item.delete();}
 }
+
+// Pedido de llavero con logo adelante y QR atrás: se arma directo, sin generar imágenes.
+export const isTwoSidedKeychain=prompt=>/llaver|chapita|tarjeta|frente|dorso|atr[aá]s/i.test(prompt)&&/\bqr\b|c[oó]digo/i.test(prompt)&&/logo|marca/i.test(prompt);
