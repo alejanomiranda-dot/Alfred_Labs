@@ -1,10 +1,12 @@
 import {validateGeneration} from './generation-spec.js';
+import {traceBitmap} from './trace.js';
 
 // A height field with a flat back and manifold sides. Every boundary vertex is
 // shared by top, side and back; no open edges, floating pixels or zero thickness.
 // Altura de cada píxel: cuánto se diferencia del fondo (tomado de los bordes de la imagen).
 // Así un dibujo oscuro sobre blanco o claro sobre negro sube igual, y el relleno transparente queda a nivel del fondo.
-export function heightField(rgba,columns,rows,{invert=false,levels=0}={}){
+export function heightField(rgba,columns,rows,{invert=false,levels=0,labels=null}={}){
+ if(labels)return colorHeights(labels,columns,rows);
  const lum=new Float32Array(columns*rows),alpha=new Float32Array(columns*rows);
  for(let p=0;p<lum.length;p++){const i=p*4;alpha[p]=rgba[i+3]/255;lum[p]=(.2126*rgba[i]+.7152*rgba[i+1]+.0722*rgba[i+2])/255;}
  const ring=[];for(let x=0;x<columns;x++)for(const y of [0,rows-1]){const p=y*columns+x;if(alpha[p]>.5)ring.push(lum[p]);}
@@ -33,10 +35,64 @@ function boxBlur(src,columns,rows,r){
  for(let y=0;y<rows;y++)for(let x=0;x<columns;x++){let s=0,n=0;for(let k=-r;k<=r;k++){const yy=y+k;if(yy>=0&&yy<rows){s+=tmp[yy*columns+x];n++;}}out[y*columns+x]=s/n;}
  return out;
 }
+// Relieve en colores: cada píxel toma el color más cercano de la paleta (0 = placa). Las zonas del motivo
+// suben como una meseta de borde corto, para que los límites entre colores queden sobre una superficie plana.
+const rgbOf=c=>[1,3,5].map(i=>parseInt(c.slice(i,i+2),16));
+function colorDistance(r,g,b,c){const mean=(r+c[0])/2,dr=r-c[0],dg=g-c[1],db=b-c[2];return (2+mean/256)*dr*dr+4*dg*dg+(2+(255-mean)/256)*db*db;}
+export function paletteLabels(rgba,columns,rows,palette){
+ const colors=palette.map(rgbOf);let labels=new Uint8Array(columns*rows);
+ for(let p=0;p<labels.length;p++){
+  const i=p*4;if(rgba[i+3]<128)continue;
+  let best=0,distance=Infinity;
+  for(let k=0;k<colors.length;k++){const d=colorDistance(rgba[i],rgba[i+1],rgba[i+2],colors[k]);if(d<distance){distance=d;best=k;}}
+  labels[p]=best;
+ }
+ // Dos pasadas de mayoría 3 × 3 borran píxeles sueltos y los halos de los bordes.
+ for(let pass=0;pass<2;pass++)labels=majority(labels,columns,rows,colors.length,1);
+ return labels;
+}
+function majority(labels,columns,rows,count,r){
+ const out=new Uint8Array(labels.length),votes=new Uint16Array(count);
+ for(let y=0;y<rows;y++)for(let x=0;x<columns;x++){
+  votes.fill(0);
+  for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){const xx=x+dx,yy=y+dy;if(xx>=0&&yy>=0&&xx<columns&&yy<rows)votes[labels[yy*columns+xx]]++;}
+  const own=labels[y*columns+x];let best=own;for(let k=0;k<count;k++)if(votes[k]>votes[best])best=k;
+  out[y*columns+x]=best;
+ }
+ return out;
+}
+function colorHeights(labels,columns,rows){
+ const mask=Float32Array.from(labels,v=>v?1:0),soft=boxBlur(mask,columns,rows,1),out=new Float32Array(labels.length);
+ for(let p=0;p<out.length;p++){const t=Math.max(0,Math.min(1,(soft[p]-.2)/.6)),v=t*t*(3-2*t);out[p]=v<.02?0:v;}
+ return out;
+}
+// Contornos de cada color en milímetros, con el mismo encuadre que la malla del relieve.
+export function colorLayers(labels,columns,rows,spec){
+ const layers=[],warnings=[];
+ const toMm=([cx,cy])=>[Math.round(((cx-.5)/(columns-1)-.5)*spec.width*1e3)/1e3,Math.round(((rows-1-(cy-.5))/(rows-1)-.5)*spec.height*1e3)/1e3];
+ for(let k=1;k<spec.palette.length;k++){
+  let current=labels,polygons=null;
+  for(let attempt=0;attempt<3&&!polygons;attempt++){
+   const binary=new Uint8ClampedArray(columns*rows*4).fill(255);
+   for(let p=0;p<current.length;p++)if(current[p]===k){binary[p*4]=binary[p*4+1]=binary[p*4+2]=0;}
+   try{polygons=traceBitmap(binary,columns,rows,128).polygons;}
+   catch(error){
+    if(/No se detectó|demasiado pequeño/.test(error.message))break;
+    // Demasiados contornos: se simplifica más esa imagen y se vuelve a intentar.
+    current=majority(current,columns,rows,spec.palette.length,attempt+1);
+   }
+  }
+  // Los puntos medios de cada lado convierten la escalera de píxeles en diagonales: sin serrucho en los bordes.
+  if(polygons)layers.push({color:spec.palette[k],polygons:polygons.map(poly=>poly.map((p,i)=>{const q=poly[(i+1)%poly.length];return toMm([(p[0]+q[0])/2,(p[1]+q[1])/2]);}))});
+  else warnings.push(spec.palette[k]);
+ }
+ return {layers,missing:warnings};
+}
 export function reliefMesh(rgba,columns,rows,raw,{invert=false}={}){
  const spec=validateGeneration(raw);
  if(!Number.isInteger(columns)||!Number.isInteger(rows)||columns<2||rows<2||columns>384||rows>384||rgba.length!==columns*rows*4)throw Error('Imagen de relieve inválida.');
- const vertices=[],triangles=[],heights=heightField(rgba,columns,rows,{invert});
+ const labels=spec.palette.length?paletteLabels(rgba,columns,rows,spec.palette):null;
+ const vertices=[],triangles=[],heights=heightField(rgba,columns,rows,{invert,labels});
  for(let y=0;y<rows;y++)for(let x=0;x<columns;x++){
   const light=heights[(rows-1-y)*columns+x];
   vertices.push((x/(columns-1)-.5)*spec.width,(y/(rows-1)-.5)*spec.height,spec.baseThickness+light*spec.depth);
@@ -46,7 +102,12 @@ export function reliefMesh(rgba,columns,rows,raw,{invert=false}={}){
  const bottom=edge.map(top=>{const index=vertices.length/3;vertices.push(vertices[top*3],vertices[top*3+1],0);return index;});
  const center=vertices.length/3;vertices.push(0,0,0);
  edge.forEach((top,i)=>{const next=(i+1)%edge.length;triangles.push(top,bottom[i],bottom[next],top,bottom[next],edge[next],center,bottom[next],bottom[i]);});
- return {name:spec.subject.slice(0,100)+' · relieve',vertices,triangles};
+ const mesh={name:spec.subject.slice(0,100)+' · relieve',vertices,triangles};
+ if(!labels)return mesh;
+ const {layers,missing}=colorLayers(labels,columns,rows,spec);
+ if(!layers.length)throw Error('No encontré en la imagen los colores pedidos. Probá con otros colores o una imagen más nítida.');
+ // Los colores empiezan arriba de la placa: las capas de la base salen de un solo filamento, sin cambios.
+ return {...mesh,colors:{zFrom:spec.baseThickness,layers},missing};
 }
 
 export async function reliefFromImage(imageDataUrl,spec,{invert=false}={}){
@@ -58,7 +119,7 @@ export async function reliefFromImage(imageDataUrl,spec,{invert=false}={}){
  // Preserve the reference's proportions with padding, rather than stretching it.
  const scale=Math.min(spec.width/image.width,spec.height/image.height),w=image.width*scale/spec.width*columns,h=image.height*scale/spec.height*rows;
  // Un suavizado leve antes de muestrear evita bordes dentados y paredes finas al imprimir.
- context.filter='blur('+Math.max(.6,Math.min(columns,rows)/180)+'px)';
+ if(!spec.palette?.length)context.filter='blur('+Math.max(.6,Math.min(columns,rows)/180)+'px)';
  context.drawImage(image,(columns-w)/2,(rows-h)/2,w,h);
  context.filter='none';
  const pixels=context.getImageData(0,0,columns,rows);
@@ -66,5 +127,7 @@ export async function reliefFromImage(imageDataUrl,spec,{invert=false}={}){
 }
 
 export function generatedParams(base,mesh,spec){
- return {...base,kind:'free',project:spec.subject.slice(0,60),importedMesh:mesh,freeDesign:{version:1,nodes:[{type:'imported',position:[0,0,0],rotation:[0,0,0]}]},printRotation:[0,0,0],sourceInfo:{...spec},forge:null};
+ const {colors=null,missing,...stored}=mesh;
+ // En colores, la placa toma el primer color de la paleta y cada zona del motivo es una parte aparte.
+ return {...base,kind:'free',project:spec.subject.slice(0,60),importedMesh:stored,importedColors:colors,...(colors?{baseColor:spec.palette[0]}:{}),freeDesign:{version:1,nodes:[{type:'imported',position:[0,0,0],rotation:[0,0,0]}]},printRotation:[0,0,0],sourceInfo:{...spec},forge:null};
 }

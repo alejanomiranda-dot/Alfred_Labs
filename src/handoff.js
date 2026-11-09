@@ -9,7 +9,7 @@ export function revisionName(project,date=new Date(),suffix=crypto.randomUUID().
 export function printGuide(params,dimensions){return `TALLER DE VERO — ${params.project}
 
 ARCHIVOS
-• .3mf: geometría para Bambu Studio${params.kind==='keychain'?', con base clara, logo multicolor y QR del dorso como partes':params.kind==='free'?', diseño libre':', con base y relieve como partes'}.
+• .3mf: geometría para Bambu Studio${params.kind==='keychain'?', con base clara, logo multicolor y QR del dorso como partes':params.kind==='free'?(params.importedColors?', relieve con la placa y cada color como partes separadas':', diseño libre'):', con base y relieve como partes'}.
 • .json: diseño editable; abrir desde Taller de Vero con «Abrir proyecto».
 Este 3MF no está laminado y no contiene el perfil de tu impresora.
 

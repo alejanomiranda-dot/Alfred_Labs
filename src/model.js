@@ -12,8 +12,20 @@ import serifData from 'three/examples/fonts/gentilis_bold.typeface.json' with { 
 const sansFont = new FontLoader().parse(sansData), serifFont = new FontLoader().parse(serifData);
 const covers=(f,texts)=>texts.every(t=>[...String(t||'').normalize('NFC')].every(c=>c===' '||f.data.glyphs[c]));
 export function templateFont(p){const texts=p.kind==='tag'?[p.name,p.phone]:p.kind==='logo'?[p.caption]:[];return covers(sansFont,texts)?sansFont:serifFont;}
-export const defaults = {version:3,kind:'tag',project:'Chapita de Mora',name:'MORA',phone:'11 2345 6789',qrText:'https://example.com',caption:'HECHO CON AMOR',shape:'round',width:45,height:32,thickness:2.4,relief:0.8,hole:4,baseColor:'#e9a08c',detailColor:'#fff8e9',backDecoration:'none',backStyle:'engraved',backDepth:.6,logoPolygons:null,freeDesign:null,importedMesh:null,sourceInfo:null,printRotation:[0,0,0],forge:null,keychain:null};
+export const defaults = {version:3,kind:'tag',project:'Chapita de Mora',name:'MORA',phone:'11 2345 6789',qrText:'https://example.com',caption:'HECHO CON AMOR',shape:'round',width:45,height:32,thickness:2.4,relief:0.8,hole:4,baseColor:'#e9a08c',detailColor:'#fff8e9',backDecoration:'none',backStyle:'engraved',backDepth:.6,logoPolygons:null,freeDesign:null,importedMesh:null,importedColors:null,sourceInfo:null,printRotation:[0,0,0],forge:null,keychain:null};
 const limits={width:[25,100],height:[25,100],thickness:[1.6,6],relief:[.4,2],hole:[2,6],backDepth:[.2,1.2]};
+// Zonas de color de un relieve: contornos en mm por color, desde la altura de la placa hacia arriba.
+function validateImportedColors(c){
+  if(c===null||c===undefined)return null;
+  if(typeof c!=='object'||typeof c.zFrom!=='number'||!Number.isFinite(c.zFrom)||c.zFrom<0||c.zFrom>20||!Array.isArray(c.layers)||!c.layers.length||c.layers.length>3)throw Error('Los colores del relieve no son válidos.');
+  let count=0;
+  for(const layer of c.layers){
+    if(!/^#[0-9a-f]{6}$/i.test(layer?.color)||!Array.isArray(layer.polygons)||!layer.polygons.length||layer.polygons.length>1500)throw Error('Los colores del relieve no son válidos.');
+    for(const poly of layer.polygons){if(!Array.isArray(poly)||poly.length<3)throw Error('Contorno de color inválido.');for(const pt of poly){if(!Array.isArray(pt)||pt.length!==2||!pt.every(v=>typeof v==='number'&&Number.isFinite(v)&&Math.abs(v)<=1000))throw Error('Contorno de color inválido.');count++;}}
+  }
+  if(count>90000)throw Error('Los colores del relieve tienen demasiado detalle.');
+  return {zFrom:c.zFrom,layers:c.layers.map(l=>({color:l.color.toLowerCase(),polygons:l.polygons}))};
+}
 export function validate(raw){
   const p={};
   for(const k of Object.keys(defaults))p[k]=raw[k]??defaults[k];
@@ -23,6 +35,7 @@ export function validate(raw){
   p.forge=validateForgeArchive(p.forge);
   if(p.kind!=='free'||!p.freeDesign?.nodes.some(n=>n.type==='imported'))p.importedMesh=null;
   p.sourceInfo=p.importedMesh&&p.sourceInfo?validateGeneration(p.sourceInfo):null;
+  p.importedColors=p.sourceInfo?.palette.length?validateImportedColors(p.importedColors):null;
   if(p.kind!=='free')p.forge=null;
   if(!Array.isArray(p.printRotation)||p.printRotation.length!==3||!p.printRotation.every(v=>[-180,-90,0,90,180].includes(v)))throw Error('Orientación de impresión inválida.');
   if(p.kind!=='free')p.printRotation=[0,0,0];

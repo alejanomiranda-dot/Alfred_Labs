@@ -55,9 +55,11 @@ export async function runCompiler(binary,args,{cwd,signal,timeoutMs=120000,limit
   const collect=b=>{bytes+=b.length;if(bytes>256*1024)stop(fail('OpenSCAD produjo demasiados mensajes.',422,'compile_output_limit'));else text=(text+b.toString()).slice(-8000);};
   child.stdout.on('data',collect);child.stderr.on('data',collect);
   child.on('error',e=>{error=fail(e.code==='ENOENT'?'No encontré OpenSCAD. Instalalo o configurá OPENSCAD_BIN con la ruta al ejecutable.':'No se pudo iniciar OpenSCAD. Revisá OPENSCAD_BIN.',503,'compiler_unavailable');});
-  child.on('close',(code)=>{clearTimeout(timer);signal?.removeEventListener('abort',abort);if(error)return reject(error);if(code!==0)return reject(fail('OpenSCAD no pudo compilar la pieza. Revisá la fuente o simplificá el pedido.',422,'compile_failed'));resolve(text);});
+  child.on('close',(code)=>{clearTimeout(timer);signal?.removeEventListener('abort',abort);if(error)return reject(error);if(code!==0)return reject(Object.assign(fail('OpenSCAD no pudo compilar la pieza. Revisá la fuente o simplificá el pedido.',422,'compile_failed'),{detail:compilerErrors(text)}));resolve(text);});
  });
 }
+// Solo las líneas de error de OpenSCAD, sin rutas locales, para que el generador pueda corregir la fuente.
+export const compilerErrors=text=>String(text).split(/\r?\n/).filter(l=>/error|parser/i.test(l)).map(l=>l.replace(/"[^"]*piece\.scad"/g,'"piece.scad"').trim()).slice(-4).join(' | ').slice(0,600);
 // OpenSCAD 2024 o posterior trae el motor Manifold: compila en segundos lo que CGAL tarda minutos.
 const backendCache=new Map();
 export async function fastBackendArgs(binary,runner=runCompiler){
@@ -95,7 +97,7 @@ IMPRIMIBLE SIN RETOQUES
 - Evitá voladizos de más de 45° siempre que la forma lo permita: preferí pendientes, apoyos sobre el cuerpo o la base, y colas o brazos que bajen hasta la base en vez de quedar en el aire.
 - Espesores mínimos de 1,2 mm; salientes finos de al menos 2 mm.
 - Medidas: si la persona pide una medida total (alto, ancho o largo), envolvé el modelo terminado en resize() con esa medida y auto=true para las demás (por ejemplo resize([0,0,80],auto=true)), y después aplicá el corte de la base. Si no pide medidas, elegí un tamaño razonable de escritorio (50 a 90 mm).
-- $fn entre 32 y 48. Máximo 290 mm por eje.
+- $fn entre 24 y 40. Máximo 290 mm por eje. Mantené la malla liviana: pelo, barba, plumas o pelaje se insinúan con pocos volúmenes grandes (mechones o bloques con hull) y surcos, nunca con decenas de esferas chicas.
 
 REGLAS
 - No uses include, use, import, surface, red ni archivos externos.
@@ -117,6 +119,17 @@ export async function generateForgeSource(body,env,{signal,fetcher=fetch}={}){
  try{validateSource(result?.scad);}catch{throw fail('OpenAI propuso una fuente inválida o con referencias externas.',502,'ai_response');}
  if(typeof result.description!=='string'||result.description.length>2000||!['assumptions','caveats'].every(k=>Array.isArray(result[k])&&result[k].length<=20&&result[k].every(v=>typeof v==='string'&&v.length<=1000)))throw fail('Las notas de la propuesta son inválidas.',502,'ai_response');
  return {scad:result.scad,description:result.description,assumptions:result.assumptions,caveats:result.caveats};
+}
+// Errores de compilación que vale la pena corregir solos una vez, con la causa concreta.
+export const retryable=code=>['compile_failed','compile_size','compile_limit','compile_timeout','compile_output_limit'].includes(code);
+export function fixPrompt(code,detail=''){
+ if(code==='compile_failed')return 'La versión anterior no compiló en OpenSCAD'+(detail?' ('+String(detail).slice(0,600)+')':'')+'. Corregí el error de sintaxis o de uso y devolvé el programa completo, con la misma forma y medidas.';
+ return 'La versión anterior generó una malla demasiado pesada para compilarla. Conservá la forma, las proporciones y las medidas, pero usá $fn=24, menos primitivas en los detalles (pelo, barba, texturas como pocos volúmenes grandes) y nada de bucles con muchas esferas chicas.';
+}
+export function userMessage(code,fallback){
+ if(code==='compile_size'||code==='compile_limit'||code==='compile_timeout')return 'La pieza salió con demasiado detalle para construirla. Pedime una versión más simple o más chica.';
+ if(code==='compile_failed')return 'No pude construir esta pieza ni corregirla sola. Probá describirla con otras palabras.';
+ return fallback||'No se pudo construir la pieza.';
 }
 export async function compileForgeSource(scad,{env=process.env,signal,timeoutMs,runner=runCompiler}={}){
  localOnly();validateSource(scad);
@@ -146,6 +159,13 @@ export async function runForge(raw,{env=process.env,signal,fetcher,runner,timeou
  let files,precompiled=false;
  try{files=await compileForgeSource(result.scad,{env,signal,runner,timeoutMs});}
  catch(e){
+  if(body.action==='generate'&&retryable(e.code)){
+   // Igual que en línea: se corrige sola una vez antes de avisar.
+   const fixed=await generateForgeSource({prompt:fixPrompt(e.code,e.detail),previous:result.scad,history:[]},env,{signal,fetcher});
+   try{files=await compileForgeSource(fixed.scad,{env,signal,runner,timeoutMs});}catch(again){if(again.code==='canceled')throw again;throw fail(userMessage(again.code,again.message),again.status||422,again.code);}
+   result={...fixed,description:result.description,assumptions:result.assumptions,caveats:[...result.caveats,'Se simplificó una vez para que el compilador la pudiera construir.']};
+   return {...result,files,precompiled,created:new Date().toISOString()};
+  }
   if(body.action!=='example'||e.code!=='compiler_unavailable')throw e;
   // A checked-in sample remains usable without OpenSCAD; never substitute it for AI output.
   const base=new URL('../experiments/alfred-forge/examples/compiled/',import.meta.url);
