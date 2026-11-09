@@ -55,7 +55,7 @@ test('watchdog, cancelación y logs excesivos terminan el proceso; hijo sin clav
 
 test('archivos excesivos, vacíos o fallidos se rechazan y se limpia la carpeta temporal',async()=>{
  let directory;
- const runner=async(_bin,args,{cwd})=>{directory=cwd;const dest=args[args.indexOf('-o')+1];await fs.writeFile(dest,'x');};
+ const runner=async(_bin,args,{cwd})=>{if(!args.includes('-o'))return '';directory=cwd;const dest=args[args.indexOf('-o')+1];await fs.writeFile(dest,'x');};
  await assert.rejects(()=>compileForgeSource(source,{runner}),e=>e.code==='compile_size');
  assert.equal(await fs.access(directory).then(()=>true,()=>false),false);
  await assert.rejects(()=>compileForgeSource(source,{runner:async(_bin,args,{cwd})=>{directory=cwd;const f=await fs.open(args[args.indexOf('-o')+1],'w');await f.truncate(fileLimit+1);await f.close();}}),e=>e.code==='compile_size');
