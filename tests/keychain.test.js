@@ -5,7 +5,7 @@ import Module from 'manifold-3d';
 import {unzipSync,strFromU8} from 'fflate';
 import {defaults,validate,buildModel} from '../src/model.js';
 import {traceColorLogo,keychainUrl,validateKeychain} from '../src/keychain.js';
-import {isTwoSidedKeychain} from '../src/keychain-ui.js';
+import {isTwoSidedKeychain} from '../src/keychain.js';
 import {threeMfBytes} from '../src/export.js';
 import {projectFromBytes} from '../src/project-file.js';
 const api=await Module();api.setup();

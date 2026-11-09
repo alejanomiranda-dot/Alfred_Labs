@@ -5,8 +5,13 @@ import QRCode from 'qrcode';
 import {validateProgram,buildSolidProgram,withImport} from './solid-program.js';
 import {maxStoredTriangles} from './mesh-import.js';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
-import fontData from 'three/examples/fonts/gentilis_bold.typeface.json' with { type: 'json' };
-const font = new FontLoader().parse(fontData);
+import sansData from 'three/examples/fonts/helvetiker_bold.typeface.json' with { type: 'json' };
+import serifData from 'three/examples/fonts/gentilis_bold.typeface.json' with { type: 'json' };
+// Templates prefer a bold sans: its strokes stay printable at small sizes. It lacks accents and Ñ,
+// so a piece whose texts need them uses Gentilis throughout instead of altering the name.
+const sansFont = new FontLoader().parse(sansData), serifFont = new FontLoader().parse(serifData);
+const covers=(f,texts)=>texts.every(t=>[...String(t||'').normalize('NFC')].every(c=>c===' '||f.data.glyphs[c]));
+export function templateFont(p){const texts=p.kind==='tag'?[p.name,p.phone]:p.kind==='logo'?[p.caption]:[];return covers(sansFont,texts)?sansFont:serifFont;}
 export const defaults = {version:3,kind:'tag',project:'Chapita de Mora',name:'MORA',phone:'11 2345 6789',qrText:'https://example.com',caption:'HECHO CON AMOR',shape:'round',width:45,height:32,thickness:2.4,relief:0.8,hole:4,baseColor:'#e9a08c',detailColor:'#fff8e9',backDecoration:'none',backStyle:'engraved',backDepth:.6,logoPolygons:null,freeDesign:null,importedMesh:null,sourceInfo:null,printRotation:[0,0,0],forge:null,keychain:null};
 const limits={width:[25,100],height:[25,100],thickness:[1.6,6],relief:[.4,2],hole:[2,6],backDepth:[.2,1.2]};
 export function validate(raw){
@@ -54,7 +59,7 @@ export function buildModel(api,raw){
   const holeInside=own(hole.intersect(outline));if(hole.area()-holeInside.area()>.01)throw Error('El agujero no cabe en esta forma. Reducí su diámetro o aumentá la base.');
   const base2=own(outline.subtract(hole));
   let base=own(base2.extrude(t));
-  const details=[],warnings=[];let qr=null;
+  const details=[],warnings=[],font=templateFont(p);let qr=null;
   function fit(polys,maxW,maxH,cx,cy,flip=false){
    if(!polys.length)return;
    const pts=polys.flat();const xs=pts.map(v=>v[0]),ys=pts.map(v=>v[1]);

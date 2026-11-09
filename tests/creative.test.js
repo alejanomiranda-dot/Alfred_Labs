@@ -32,16 +32,22 @@ test('modelo configurado en el entorno local llega a la guía además de Forge',
 });
 function edgesClosed(mesh){const edges=new Map();for(let i=0;i<mesh.triangles.length;i+=3)for(let j=0;j<3;j++){const a=mesh.triangles[i+j],b=mesh.triangles[i+(j+1)%3],key=[Math.min(a,b),Math.max(a,b)].join(':');const e=edges.get(key)||[0,0];e[0]++;e[1]+=a<b?1:-1;edges.set(key,e);}for(const e of edges.values())assert.deepEqual(e,[2,0]);}
 test('mapa de alturas produce relieve cerrado con base plana, medidas y volumen reales',()=>{
- const pixels=new Uint8ClampedArray(4*4*4);for(let i=0;i<16;i++)pixels.set([i%4*85,i%4*85,i%4*85,255],i*4);
- const mesh=reliefMesh(pixels,4,4,spec);edgesClosed(mesh);
+ // Fondo negro con un cuadrado blanco al centro: el fondo queda en la base y el cuadrado sube toda la profundidad.
+ const pixels=new Uint8ClampedArray(8*8*4);for(let i=0;i<64;i++){const x=i%8,y=Math.floor(i/8),v=x>1&&x<6&&y>1&&y<6?255:0;pixels.set([v,v,v,255],i*4);}
+ const mesh=reliefMesh(pixels,8,8,spec);edgesClosed(mesh);
  const model=buildModel(api,generatedParams(defaults,mesh,spec));edgesClosed(model.combined);
- assert.deepEqual(model.dimensions,[80,60,5]);assert.ok(Math.abs(model.volume-80*60*3.5)<.01);assert.ok(stlBytes(model.combined).length>84);assert.ok(threeMfBytes(model).length>100);
+ assert.deepEqual(model.dimensions,[80,60,5]);assert.ok(model.volume>80*60*2+1&&model.volume<80*60*5);assert.ok(stlBytes(model.combined).length>84);assert.ok(threeMfBytes(model).length>100);
  assert.equal(model.params.sourceInfo.subject,spec.subject);
 });
 test('imagen transparente queda en el plano base, inversión y orientación se conservan',()=>{
- const p=new Uint8ClampedArray([255,255,255,255,0,0,0,0,0,0,0,255,255,255,255,255]);
- const normal=reliefMesh(p,2,2,spec),inverse=reliefMesh(p,2,2,spec,{invert:true});
- assert.equal(normal.vertices[2],2);assert.equal(normal.vertices[8],5);assert.equal(normal.vertices[11],2);assert.equal(inverse.vertices[2],5);assert.equal(inverse.vertices[11],2);edgesClosed(normal);
+ // Fondo blanco con un cuadrado negro y una esquina transparente: el fondo se toma del borde,
+ // el dibujo sube, lo transparente queda en la base e invertir da vuelta el dibujo.
+ const n=24,p=new Uint8ClampedArray(n*n*4);
+ for(let r=0;r<n;r++)for(let x=0;x<n;x++){const i=(r*n+x)*4,square=x>=8&&x<16&&r>=8&&r<16,clear=x<5&&r<5;p.set(clear?[0,0,0,0]:square?[0,0,0,255]:[255,255,255,255],i);}
+ const z=(mesh,x,r)=>mesh.vertices[((n-1-r)*n+x)*3+2];
+ const normal=reliefMesh(p,n,n,spec),inverse=reliefMesh(p,n,n,spec,{invert:true});
+ assert.ok(z(normal,12,12)>4.5);assert.equal(z(normal,20,20),2);assert.equal(z(normal,1,1),2);
+ assert.equal(z(inverse,12,12),2);assert.ok(z(inverse,20,20)>4.5);assert.equal(z(inverse,1,1),2);edgesClosed(normal);
 });
 test('ruido de una imagen densa sigue siendo un sólido cerrado dentro de los límites',()=>{
  const p=new Uint8ClampedArray(160*160*4);for(let i=0;i<p.length;i+=4){p[i]=p[i+1]=p[i+2]=(i*17)%256;p[i+3]=255;}

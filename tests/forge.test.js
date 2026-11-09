@@ -28,7 +28,7 @@ test('Forge rechaza entradas inválidas y referencias externas; historial acotad
 
 test('Responses recibe la fuente previa completa y roles; errores no filtran claves ni respuestas privadas',async()=>{
  let sent;
- const result=await generateForgeSource({prompt:'Más alto',previous:source,history:[{role:'assistant',content:'Propuesta pendiente'}]},{OPENAI_API_KEY:'secret-test',OPENAI_MODEL:'model-test'},{fetcher:async(url,init)=>{assert.equal(url,'https://api.openai.com/v1/responses');sent=JSON.parse(init.body);return aiReply(notes);}});
+ const result=await generateForgeSource({prompt:'Más alto',previous:source,history:[{role:'assistant',content:'Propuesta pendiente'}]},{OPENAI_API_KEY:'secret-test',OPENAI_FORGE_MODEL:'model-test'},{fetcher:async(url,init)=>{assert.equal(url,'https://api.openai.com/v1/responses');sent=JSON.parse(init.body);return aiReply(notes);}});
  assert.equal(result.scad,source);assert.equal(sent.store,false);assert.equal(sent.model,'model-test');assert.equal(sent.text.format.strict,true);assert.equal(sent.input[0].role,'assistant');assert.equal(JSON.parse(sent.input[1].content).fuenteAnterior,source);
  await assert.rejects(()=>generateForgeSource({prompt:'x',history:[]},{OPENAI_API_KEY:'secret-test'},{fetcher:async()=>reply({error:{message:'private secret-test',code:'insufficient_quota'}},429)}),e=>/créditos/.test(e.message)&&!e.message.includes('secret-test'));
  await assert.rejects(()=>generateForgeSource({prompt:'x',history:[]},{},{fetcher:()=>{throw Error('No debe llamar');}}),/OPENAI_API_KEY/);
@@ -55,7 +55,7 @@ test('watchdog, cancelación y logs excesivos terminan el proceso; hijo sin clav
 
 test('archivos excesivos, vacíos o fallidos se rechazan y se limpia la carpeta temporal',async()=>{
  let directory;
- const runner=async(_bin,args,{cwd})=>{directory=cwd;const dest=args[args.indexOf('-o')+1];await fs.writeFile(dest,'x');};
+ const runner=async(_bin,args,{cwd})=>{if(!args.includes('-o'))return '';directory=cwd;const dest=args[args.indexOf('-o')+1];await fs.writeFile(dest,'x');};
  await assert.rejects(()=>compileForgeSource(source,{runner}),e=>e.code==='compile_size');
  assert.equal(await fs.access(directory).then(()=>true,()=>false),false);
  await assert.rejects(()=>compileForgeSource(source,{runner:async(_bin,args,{cwd})=>{directory=cwd;const f=await fs.open(args[args.indexOf('-o')+1],'w');await f.truncate(fileLimit+1);await f.close();}}),e=>e.code==='compile_size');
@@ -76,10 +76,9 @@ test('muestra real: STL y 3MF cerrados, propuesta sin mutar original, guardado d
  const revision=revisionFromResult(result,'Muestra','example');const archive=appendForgeRevision(null,revision);
  const before=JSON.stringify(defaults),checked=prepareForgeProposal(api,defaults,result,archive);
  assert.equal(JSON.stringify(defaults),before);assert.equal(checked.candidate.kind,'free');assert.deepEqual(checked.built.dimensions.map(Math.round),[78,78,140]);assert.ok(checked.built.volume>1000);
- const zip=unzipSync(base64Bytes(result.files['3mf']));assert.ok(Object.keys(zip).some(p=>p.endsWith('.model')));
- assert.match(strFromU8(zip[Object.keys(zip).find(p=>p.endsWith('.model'))]),/<mesh>/);
+
  const {readMeshFile}=await import('../src/mesh-import.js');const {prepareImport}=await import('../src/solid-program.js');
- const m3=prepareImport(api,readMeshFile('tree.3mf',base64Bytes(result.files['3mf'])));assert.deepEqual(m3.size.map(Math.round),[78,78,140]);assert.ok(Math.abs(m3.volume-checked.built.volume)<1);
+ const m3=prepareImport(api,readMeshFile('tree.stl',base64Bytes(result.files.stl)));assert.deepEqual(m3.size.map(Math.round),[78,78,140]);assert.ok(Math.abs(m3.volume-checked.built.volume)<1);assert.equal(result.files['3mf'],undefined,'Forge compila solo el STL; la app arma el 3MF');
  const restored=validate(JSON.parse(JSON.stringify(checked.candidate)));assert.equal(restored.forge.revisions[0].scad,result.scad);assert.ok(buildModel(api,restored).volume>0);
  assert.throws(()=>prepareForgeProposal(api,defaults,{...result,files:{stl:'aW52YWxpZA=='}},archive));assert.equal(JSON.stringify(defaults),before);
  await assert.rejects(()=>compileForgeSource(source+'this is not valid scad;'),e=>e.code==='compile_failed');
@@ -98,4 +97,9 @@ test('generar y corregir: Responses simulado, compilación real, medidas e histo
  const second=revisionFromResult(corrected,'Alto de 18 mm','second'),two=prepareForgeProposal(api,defaults,corrected,appendForgeRevision(archive,second));
  assert.deepEqual(two.built.dimensions.map(Math.round),[30,20,18]);assert.equal(two.candidate.forge.revisions.length,2);
  assert.equal(JSON.stringify(defaults),before);assert.equal(one.candidate.forge.revisions.length,1);
+});
+test('Forge usa un modelo de razonamiento por defecto con instrucciones de impresión',async()=>{
+ let sent;
+ await generateForgeSource({prompt:'Un gato de 80 mm',history:[]},{OPENAI_API_KEY:'secret-test'},{fetcher:async(_,init)=>{sent=JSON.parse(init.body);return {ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify({scad:'cube([10,10,10]); // pieza de prueba suficientemente larga',description:'Cubo',assumptions:[],caveats:[]})}]}]})};}});
+ assert.equal(sent.model,'gpt-6.1-sol');assert.equal(sent.reasoning.effort,'medium');assert.match(sent.instructions,/resize\(\[0,0,80\]/);assert.match(sent.instructions,/intersection/);
 });
