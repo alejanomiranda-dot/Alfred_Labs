@@ -1,3 +1,5 @@
+import {projectFromBytes} from './project-file.js';
+import {createKeychainDesigner,isTwoSidedKeychain} from './keychain-ui.js';
 import './style.css';
 import {mountForge} from './forge-ui.js';
 import {createVisualDesigner} from './visual-designer.js';
@@ -9,7 +11,7 @@ import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import {defaults,validate,buildModel} from './model.js';
 import {checkProposal as verifyProposal,proposalChanges,pendingContext} from './proposals.js';
 import {stlBytes,threeMfBytes} from './export.js';
-import {revisionName,handoffZip,handoffFiles,writeFolder,saveAsFile} from './handoff.js';
+import {revisionName,handoffZip,handoffFiles,writeFolder,saveAsFile,safeName} from './handoff.js';
 import {traceBitmap} from './trace.js';
 import {readMeshFile} from './mesh-import.js';
 import {createViewerTools} from './viewer-tools.js';
@@ -23,7 +25,7 @@ import {reviewPrint,costOf,durationText,composeRotation} from './printability.js
 import {loadSettings,saveSettings,money,settingDefaults} from './settings.js';
 import {prepareImport,describeImport} from './solid-program.js';
 const $=id=>document.getElementById(id),storageKey='taller-vero-projects-v1';
-let forgeUI=null;
+let forgeUI=null,keychainDesigner=null;
 let params={...defaults},model=null,api=null,timer,toastTimer,renderer,scene,camera,controls,group,stageGrid,wireframe=false,renderDirty=true,tools=null;
 // Colored parts of a model: templates have base + relief; free designs can have several colors.
 function partsOf(m,p){return m.parts||[{mesh:m.base,color:p.baseColor},{mesh:m.detail,color:p.detailColor}];}
@@ -82,7 +84,7 @@ function draw(){
  for(const {mesh:meshData,color} of partsOf(model,params)){if(!meshData.triangles.length)continue;const mesh=new THREE.Mesh(geometry(meshData),new THREE.MeshStandardMaterial({color,roughness:.4,metalness:.12,flatShading:true,wireframe}));mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);}
  tools?.afterDraw();
 }
-function setExportEnabled(enabled){for(const id of ['exportStl','export3mf'])$(id).disabled=!enabled;}
+function setExportEnabled(enabled){for(const id of ['exportStl','export3mf'])$(id).disabled=!enabled;if($('keychainDownload'))$('keychainDownload').disabled=!(proposal?.kind==='keychain'?previewModel:params.kind==='keychain'?model:null);}
 function render(){
  clearTimeout(timer);renderDirty=true;if(!api)return;
  model=null;setExportEnabled(false);
@@ -93,7 +95,7 @@ function render(){
   if(params.kind!=='free'){ $('height').value=params.height; $('height').readOnly=params.shape==='circle'; $('height').title=params.shape==='circle'?'El alto coincide con el diámetro del círculo.':''; }
   if(renderer)draw();
   $('loading').style.display='none';$('dimensions').textContent=`${model.dimensions?model.dimensions.map(v=>v.toFixed(1)).join(' × '):params.width+' × '+params.height} mm`;$('totalHeight').textContent=`${model.totalHeight.toFixed(1).replace('.',',')} mm`;
-  $('partLabel').textContent=params.kind==='free'?(model.parts?'Multicolor · '+model.parts.length+' colores':'Sólido libre · 1 color'):'Base + relieve';$('statusTitle').textContent='Geometría generada';$('statusText').textContent='Sólido cerrado. Pendiente de revisar en el laminador y probar impreso.';
+  $('partLabel').textContent=params.kind==='keychain'?'Logo + QR · '+model.parts.length+' colores':params.kind==='free'?(model.parts?'Multicolor · '+model.parts.length+' colores':'Sólido libre · 1 color'):'Base + relieve';$('statusTitle').textContent='Geometría generada';$('statusText').textContent='Sólido cerrado. Pendiente de revisar en el laminador y probar impreso.';
   $('warnings').replaceChildren();for(const w of model.warnings){const el=document.createElement('div');el.className='warning';el.textContent=w;$('warnings').append(el);}setExportEnabled(true);scheduleReview();
  }catch(error){$('statusTitle').textContent='Hay algo para revisar';$('statusText').textContent=error.message; $('warnings').replaceChildren();$('loading').style.display='block';$('loading').textContent='Corregí los datos para actualizar la pieza.';clearGeometry();}
 }
@@ -105,23 +107,27 @@ function sync(){
  $('designForm').classList.toggle('free-mode',params.kind==='free');$('freeInfo').hidden=params.kind!=='free';if(params.kind==='free')$('freeOperations').textContent=(params.freeDesign?.nodes||[]).map((n,i)=>(i+1)+'. '+({box:'Bloque',open_box:'Caja abierta · paredes y fondo',imported:'Pieza importada del archivo',open_cylinder:'Recipiente redondo · paredes y fondo',revolve:'Pieza de revolución (perfil por tramos)',engrave_text:'Texto grabado',emboss_text:'Texto en relieve',cylinder:'Cilindro / cono',sphere:'Esfera',ellipsoid:'Elipsoide',capsule:'Cápsula',torus:'Anillo',extrude:'Contorno extruido',text:'Texto',union:'Unión',subtract:'Sustracción / hueco',intersect:'Intersección'}[n.type]||n.type)).join('\n')||'Todavía no hay geometría. Empecemos por tu idea.';
  if($('opEditor')){if(params.kind==='free'&&params.freeDesign)renderOpEditor($('opEditor'),params.freeDesign,editProgram);else $('opEditor').replaceChildren();}updateHistoryButtons();
  $('logoNote').textContent=params.logoPolygons?'Logo vectorial cargado. El relieve usa un solo color.':'Usá un SVG con formas rellenas y textos convertidos a curvas. Se crea un relieve de un color.';
- render();forgeUI?.sync();
+ if($('projectTitle'))$('projectTitle').textContent=params.project||'Proyecto sin nombre';
+ render();forgeUI?.sync();syncKeychainActions();
 }
+// Piece settings share the side column with the chat, so the 3D view stays visible while editing.
+function setPropertiesOpen(open){const editor=$('propertiesPanel');if(!editor)return;editor.classList.toggle('is-open',open);$('toggleProperties')?.setAttribute('aria-expanded',String(open));document.querySelector('.workspace').classList.toggle('properties-open',open);if(open)showWorkspaceView('piece',false);}
 $('designForm').addEventListener('submit',e=>e.preventDefault());
 $('designForm').addEventListener('input',e=>{if(!(e.target.id in defaults))return;rememberState();params[e.target.id]=e.target.type==='number'?Number(e.target.value):e.target.value;if(params.shape==='circle'&&params.kind!=='free')params.height=params.width;invalidateProposal();invalidateAssistantUndo();model=null;setExportEnabled(false);clearTimeout(timer);timer=setTimeout(render,180);});
 for(const button of document.querySelectorAll('[data-kind]'))button.addEventListener('click',()=>{
  resetProjectContext();params.kind=button.dataset.kind;
  Object.assign(params,params.kind==='tag'?{project:'Chapita de Mora',width:45,height:32,baseColor:'#e9a08c',detailColor:'#fff8e9'}:params.kind==='qr'?{project:'Mi llavero QR',width:50,height:58,shape:'round',baseColor:'#fff8e9',detailColor:'#254e40'}:params.kind==='free'?{project:'Mi diseño libre',freeDesign:null,importedMesh:null}:{project:'Mi llavero con logo',width:45,height:40,baseColor:'#254e40',detailColor:'#fff8e9'});sync();if(camera)resetView();
+ setPropertiesOpen(params.kind!=='free');
 });
 $('front').onclick=()=>resetView(true);$('perspective').onclick=()=>resetView();$('resetView').onclick=()=>resetView();
 const backButton=document.createElement('button');backButton.id='backView';backButton.className='small';backButton.textContent='Dorso';backButton.onclick=()=>resetView(false,true);$('front').after(backButton);
 const freeInfo=document.createElement('div');freeInfo.id='freeInfo';freeInfo.hidden=true;freeInfo.innerHTML='<p class="eyebrow">DISEÑO POR OPERACIONES</p><p>Describí al asistente qué pieza necesitás, con sus medidas en milímetros. Podés pedir volúmenes, paredes, agujeros, textos y contornos propios.</p><p class="hint">El asistente prepara la pieza y vos decidís cuándo aplicarla. Para cambiarla después, pedí nuevas medidas o detalles.</p><pre id="freeOperations" aria-label="Operaciones de la pieza" hidden></pre><div class="op-tools"><span class="eyebrow">AJUSTE DIRECTO</span><button type="button" id="undoEdit" class="small" disabled>↶ Deshacer</button><button type="button" id="redoEdit" class="small" disabled>↷ Rehacer</button></div><div id="opEditor"></div><p class="hint">Hasta 60 operaciones y 300 mm por eje. Este límite de diseño no representa el volumen de tu impresora. Revisá el tamaño y las tolerancias en Bambu Studio.</p>';$('project').parentElement.after(freeInfo);
-const backFields=document.createElement('section');backFields.innerHTML='<div class="divider"></div><label>Decoración del dorso<select id="backDecoration"><option value="none">Sin decoración</option><option value="bone">Huesito</option></select></label><div class="fields"><label>Terminación<select id="backStyle"><option value="engraved">Grabado</option><option value="raised">Relieve</option></select></label><label>Profundidad · mm<input id="backDepth" type="number" min="0.2" max="1.2" step="0.2" value="0.6" required></label></div><p class="hint">El grabado entra en la base. El relieve sobresale y puede requerir soportes. Usá «Dorso» para revisar el resultado.</p>';$('save').before(backFields);
+const backFields=document.createElement('section');backFields.innerHTML='<p class="form-section">Dorso</p><label>Decoración del dorso<select id="backDecoration"><option value="none">Sin decoración</option><option value="bone">Huesito</option></select></label><div class="fields"><label>Terminación<select id="backStyle"><option value="engraved">Grabado</option><option value="raised">Relieve</option></select></label><label>Profundidad · mm<input id="backDepth" type="number" min="0.2" max="1.2" step="0.2" value="0.6" required></label></div><p class="hint">El grabado entra en la base. El relieve sobresale y puede requerir soportes. Usá «Dorso» para revisar el resultado.</p>';$('designForm').append(backFields);
 $('exportStl').onclick=()=>{render();if(model)download(stlBytes(model.combined),basename()+'.stl','model/stl');};
 $('export3mf').onclick=async()=>{render();if(!model)return;try{const name=revisionName(params.project)+'.3mf',bytes=threeMfBytes(model);const result=await saveAsFile(window,bytes,name,'3mf');if(result.method==='download'){download(bytes,name,'model/3mf');toast('Descarga iniciada. La ubicación depende de la configuración del navegador.');}else if(result.method==='picker')toast('Archivo guardado. Abrilo o arrastralo a Bambu Studio.');}catch(e){toast('No se pudo guardar: '+e.message);}};
 $('exportProject').onclick=()=>{try{download(JSON.stringify(validate(params),null,2),basename()+'.json','application/json');}catch(e){toast(e.message);}};
-$('importProject').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>40e6)throw Error('El proyecto es demasiado grande.');const candidate=validate(JSON.parse(await file.text()));resetProjectContext();const previous=params;params=candidate;sync();if(!model){params=previous;sync();throw Error('El proyecto no pudo generar una pieza válida.');}if(camera)resetView();toast('Proyecto abierto.');}catch(error){toast('No se pudo abrir: '+error.message);}finally{e.target.value='';}};
-$('save').onclick=async()=>{try{render();if(!model)throw Error('Revisá el diseño antes de guardarlo.');const first=!currentProjectId;currentProjectId=currentProjectId||crypto.randomUUID();await saveVersion({id:crypto.randomUUID(),projectId:currentProjectId,date:new Date().toISOString(),name:params.project,params:validate(params),thumb:camera?thumbnail(captureTarget()):null});updateCount();toast(first?'Proyecto guardado en la biblioteca.':'Nueva versión guardada. Las anteriores siguen en la biblioteca.');}catch(error){toast('No se pudo guardar: '+error.message);}};
+$('importProject').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>40e6)throw Error('El proyecto es demasiado grande.');const candidate=validate(projectFromBytes(file.name,new Uint8Array(await file.arrayBuffer())));resetProjectContext();const previous=params;params=candidate;sync();if(!model){params=previous;sync();throw Error('El proyecto no pudo generar una pieza válida.');}if(camera)resetView();toast('Proyecto abierto.');}catch(error){toast('No se pudo abrir: '+error.message);}finally{e.target.value='';}};
+async function saveCurrent(){try{render();if(!model)throw Error('Revisá el diseño antes de guardarlo.');const first=!currentProjectId;currentProjectId=currentProjectId||crypto.randomUUID();await saveVersion({id:crypto.randomUUID(),projectId:currentProjectId,date:new Date().toISOString(),name:params.project,params:validate(params),thumb:camera?thumbnail(captureTarget()):null});updateCount();toast(first?'Proyecto guardado en la biblioteca.':'Nueva versión guardada. Las anteriores siguen en «Mis diseños».');}catch(error){toast('No se pudo guardar: '+error.message);}}
 async function showLibrary(){
  const host=$('libraryList');host.replaceChildren();let projects=[];try{projects=await listProjects();}catch{host.textContent='Este navegador no permite guardar proyectos.';}
  if(!projects.length&&!host.textContent)host.textContent='Tu próximo diseño empieza acá. Guardá una pieza para encontrarla en esta biblioteca, con todas sus versiones.';
@@ -156,9 +162,8 @@ try{api=await Module({locateFile:path=>path.endsWith('.wasm')?wasmUrl:path});api
 
 // Local handoff: the browser grants access only to the folder selected by Vero.
 const handoff=document.createElement('section');handoff.className='handoff';handoff.id='handoffPanel';
-handoff.innerHTML='<h2>Tu carpeta de trabajos</h2><p>Guardá la pieza para Bambu Studio y una copia editable para volver a trabajarla.</p><div class="handoff-actions"><button id="chooseFolder" class="secondary">Elegir carpeta de trabajo</button><button id="saveFolder" class="secondary">Guardar trabajo en carpeta</button><button id="savePackage" class="primary">Descargar paquete ZIP</button></div><p id="folderStatus" class="hint">Sin carpeta elegida. El paquete ZIP funciona también si tu navegador no permite guardar en carpetas.</p><ol><li>Guardá el 3MF o extraé el ZIP.</li><li>En Bambu Studio: Archivo → Importar (Ctrl+I), o arrastrá el 3MF a la ventana.</li><li>Conservá las partes del mismo objeto y asigná los filamentos.</li><li>Elegí el perfil de tu A2L, laminá, revisá y enviá desde Bambu Studio.</li></ol><p class="hint">El 3MF contiene la pieza. La configuración de impresora y el laminado se guardan después desde Bambu Studio.</p>';
-document.querySelector('.workspace').after(handoff);
-$('export3mf').innerHTML='Guardar para Bambu Studio <span>↗</span>';
+handoff.innerHTML='<p class="tool-title">Paquete y carpeta de trabajo</p><p class="hint">El ZIP reúne el 3MF, el proyecto editable y la guía de impresión. Con una carpeta elegida, cada guardado crea una revisión nueva.</p><div class="handoff-actions"><button id="savePackage" class="secondary">Descargar paquete ZIP</button><button id="chooseFolder" class="secondary">Elegir carpeta</button><button id="saveFolder" class="secondary">Guardar en la carpeta</button></div><p id="folderStatus" class="hint">Sin carpeta elegida.</p>';
+$('moreOutputs').append(handoff);
 let directory=null;
 $('chooseFolder').onclick=async()=>{if(!window.showDirectoryPicker){toast('Este navegador no permite elegir carpetas. Usá el paquete ZIP o abrí el taller en Chrome o Edge.');return;}try{directory=await window.showDirectoryPicker({id:'taller-vero-folder',mode:'readwrite'});$('folderStatus').textContent='Carpeta elegida: '+directory.name+'. Disponible durante esta sesión; cada guardado crea una revisión nueva.';}catch(e){if(e.name!=='AbortError')toast('El navegador no habilitó la carpeta. Podés usar el paquete ZIP.');}};
 $('saveFolder').onclick=async()=>{if(!directory){toast('Elegí primero una carpeta, o descargá el paquete ZIP.');return;}try{if(await directory.requestPermission({mode:'readwrite'})!=='granted')throw Error('No se concedió acceso a la carpeta.');render();if(!model)throw Error('Revisá los datos del diseño.');const stem=revisionName(params.project),folder=await directory.getDirectoryHandle(stem,{create:true});await writeFolder(folder,handoffFiles(model,stem));$('folderStatus').textContent='Guardado en '+directory.name+' / '+stem+' · 3MF, proyecto editable y guía.';toast('Trabajo guardado en la carpeta.');}catch(e){toast('No se completó el guardado: '+e.message+' Puede haber archivos parciales; volvé a guardar una revisión.');}};
@@ -184,26 +189,25 @@ document.querySelector('.workspace').append(assistant);
 showConversation();
 // Keep creation, conversation and fabrication in separate, reachable places.
 const workspaceActions=document.createElement('nav');workspaceActions.className='workspace-actions';workspaceActions.setAttribute('aria-label','Herramientas del proyecto');
-workspaceActions.innerHTML='<span>DISEÑÁ CON ALFRED</span><button id="saveQuick" class="secondary" type="button">Guardar versión</button><button id="toggleProperties" class="secondary" type="button" aria-expanded="false" aria-controls="propertiesPanel">Ajustes de la pieza</button><button id="toggleFabrication" class="secondary" type="button" aria-expanded="false" aria-controls="fabricationPanel">Preparar para imprimir ↓</button>';
+workspaceActions.innerHTML='<div class="project-heading"><span>PROYECTO</span><strong id="projectTitle"></strong></div><button id="saveQuick" class="secondary" type="button">Guardar versión</button><button id="toggleProperties" class="secondary" type="button" aria-expanded="false" aria-controls="propertiesPanel">Ajustes de la pieza</button><button id="toggleFabrication" class="primary" type="button" aria-expanded="false" aria-controls="fabricationPanel">Imprimir ↓</button>';
 document.querySelector('.workspace').before(workspaceActions);
 const editor=document.querySelector('.editor');editor.id='propertiesPanel';
-$('saveQuick').onclick=()=>$('save').click();
-document.querySelector('.studio-rail a[href="#designForm"]').onclick=()=>{editor.classList.add('is-open');$('toggleProperties').setAttribute('aria-expanded','true');};
-$('toggleProperties').onclick=()=>{const open=editor.classList.toggle('is-open');$('toggleProperties').setAttribute('aria-expanded',String(open));};
-const fabrication=document.createElement('details');fabrication.id='fabricationPanel';fabrication.className='fabrication-panel';fabrication.innerHTML='<summary>Preparar para imprimir <span>Revisión, archivos, costos y exportación</span></summary>';document.querySelector('.workspace').after(fabrication);fabrication.append(document.querySelector('.output'),$('handoffPanel'));
+$('projectTitle').textContent=params.project;
+$('saveQuick').onclick=saveCurrent;
+$('toggleProperties').onclick=()=>setPropertiesOpen(!editor.classList.contains('is-open'));
+$('closeProperties').onclick=()=>{setPropertiesOpen(false);showWorkspaceView('chat',false);};
+const fabrication=document.createElement('details');fabrication.id='fabricationPanel';fabrication.className='fabrication-panel';fabrication.innerHTML='<summary>Imprimir <span>Revisión, costo y archivo para Bambu Studio</span></summary>';document.querySelector('.workspace').after(fabrication);fabrication.append(document.querySelector('.output'));
 $('toggleFabrication').onclick=()=>{fabrication.open=!fabrication.open;$('toggleFabrication').setAttribute('aria-expanded',String(fabrication.open));if(fabrication.open)fabrication.scrollIntoView({behavior:'smooth',block:'start'});};
-document.querySelector('.studio-rail a[href="#handoffPanel"]').onclick=()=>{fabrication.open=true;};
 fabrication.addEventListener('toggle',()=>$('toggleFabrication').setAttribute('aria-expanded',String(fabrication.open)));
 const viewTabs=document.createElement('nav');viewTabs.className='workspace-mode-tabs';viewTabs.setAttribute('aria-label','Vista del espacio de diseño');viewTabs.innerHTML='<button type="button" class="secondary" data-workspace-view="piece" aria-pressed="false">Pieza 3D</button><button type="button" class="secondary" data-workspace-view="chat" aria-pressed="true">Chat con Alfred</button>';document.querySelector('.workspace').prepend(viewTabs);document.querySelector('.workspace').dataset.mobileView='chat';
 function showWorkspaceView(view,scroll=true){document.querySelector('.workspace').dataset.mobileView=view;for(const b of viewTabs.querySelectorAll('button'))b.setAttribute('aria-pressed',String(b.dataset.workspaceView===view));if(scroll&&matchMedia('(max-width:1050px)').matches)viewTabs.scrollIntoView({behavior:'smooth',block:'start'});}
-for(const b of viewTabs.querySelectorAll('button'))b.onclick=()=>showWorkspaceView(b.dataset.workspaceView);
+for(const b of viewTabs.querySelectorAll('button'))b.onclick=()=>{if(b.dataset.workspaceView==='chat')setPropertiesOpen(false);showWorkspaceView(b.dataset.workspaceView);};
 $('previewOnMobile').onclick=()=>showWorkspaceView('piece');
-function clearProposal(){proposal=null;proposalBase=null;hideGhost();$('proposalCard').hidden=true;$('applyProposal').hidden=true;}
+function clearProposal(){proposal=null;proposalBase=null;hideGhost();$('proposalCard').hidden=true;$('applyProposal').hidden=true;syncKeychainActions();}
 function invalidateProposal(){if(proposal&&JSON.stringify(params)!==proposalBase){clearProposal();$('assistantReply').textContent='La pieza cambió. Pedí una propuesta nueva para incluir tus ajustes.';}}
 function invalidateAssistantUndo(){if(previousDesign&&JSON.stringify(params)!==previousAppliedSnapshot){previousDesign=null;previousAppliedSnapshot=null;if($('undoProposal'))$('undoProposal').hidden=true;}}
 function setAssistantBusy(busy){assistantBusy=busy;$('askAssistant').disabled=busy||!localAssistant;$('stopAssistant').hidden=!busy;$('applyProposal').disabled=busy;$('discardProposal').disabled=busy;$('conversation').setAttribute('aria-busy',String(busy));}
 let localAssistant=location.hostname==='127.0.0.1';
-document.querySelector('.output details p').textContent='Cinco formas de empezar: desde cero, desde una foto, desde tu archivo 3D (STL o 3MF), un repuesto a medida o una plantilla. Guía con inteligencia artificial que verifica cada propuesta antes de mostrarla. Volúmenes, recipientes, piezas por perfil, textos e íconos grabados, en relieve, incrustados o alrededor de superficies curvas, hasta 4 colores. Regla, cotas, corte, revisión de impresión con material, tiempo y costo, prueba de encaje, versiones, foto de producto y presupuesto.';
 if(!localAssistant){$('askAssistant').disabled=true;$('assistantReply').textContent='Comprobando disponibilidad del asistente…';fetch('/api/assistant').then(async response=>{if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error();const status=await response.json();localAssistant=status.enabled===true;if(!localAssistant){$('assistantReply').textContent='El asistente todavía no está configurado en el servidor.';return;}$('askAssistant').disabled=false;$('assistantReply').textContent='El asistente está listo. Contale qué querés crear.';}).catch(()=>$('assistantReply').textContent='Este alojamiento no tiene servidor de IA. Podés usar las herramientas de diseño y exportación o abrir la versión local.');}
 function sizeText(v){return v.map(x=>String(Math.round(x*10)/10).replace('.',',')).join(' × ')+' mm';}
 $('assistantPrompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(!assistantBusy&&!$('askAssistant').disabled)$('assistantForm').requestSubmit();}});
@@ -216,6 +220,7 @@ visualDesigner=createVisualDesigner({host:$('visualHost'),getParams:()=>params,g
 $('assistantForm').onsubmit=async e=>{
  e.preventDefault();if(forgeUI?.isBusy()){toast('Esperá a que termine Forge o detené la generación.');return;}if(!localAssistant||assistantBusy)return;
  const prompt=$('assistantPrompt').value.trim();if(!prompt)return;
+ if(isTwoSidedKeychain(prompt)){addMessage('user',prompt);$('assistantPrompt').value='';addMessage('assistant','Vamos a armar un solo llavero con tu logo adelante y el QR atrás. Revisá el logo y completá el enlace; no hace falta generar otra imagen.');keychainDesigner.open({...(referenceImage?{imageDataUrl:referenceImage}:{}),url:prompt.match(/https?:\/\/[^\s]+/)?.[0]});return;}
  invalidateProposal();
  const snapshot=JSON.stringify(params),base=JSON.parse(snapshot),epoch=projectEpoch,serial=++requestSerial,maxAttempts=3;
  const pendingDesign=proposal?structuredClone(proposal):null,pending=pendingContext(params,proposal,proposalBase),pendingGeneration=visualDesigner?.pending(),recent=conversation.slice(-12).map(({role,content})=>({role,content:content.slice(0,1600)})),image=referenceImage;
@@ -263,10 +268,10 @@ $('undoProposal').onclick=()=>{
 };
 
 function resetProjectContext(){visualDesigner?.reset();projectEpoch++;requestSerial++;requestController?.abort();requestController=null;if($('stopAssistant'))setAssistantBusy(false);if($('proposalCard'))$('proposalCard').hidden=true;history=[];future=[];updateHistoryButtons();previousAppliedSnapshot=null;currentProjectId=null;hideGhost();conversation=[];referenceImage=null;showConversation();if($('referencePanel'))$('referencePanel').hidden=true;if($('assistantPrompt'))$('assistantPrompt').value='';if($('applyProposal'))$('applyProposal').hidden=true;if($('undoProposal'))$('undoProposal').hidden=true;if($('proposalChanges'))$('proposalChanges').replaceChildren();if($('assistantReply'))$('assistantReply').textContent='Contame qué vamos a crear y para qué lo necesitás.';proposal=null;proposalBase=null;previousDesign=null;}
-function startBlank(){forgeUI?.openCad();resetProjectContext();showWorkspaceView('chat',false);params={...defaults,kind:'free',project:'Mi nuevo proyecto',freeDesign:null};sync();if(camera)resetView();$('assistantPrompt').placeholder='Un escudo en relieve, una luna, una botella, una maceta…';showWorkspaceView('chat',false);$('assistantPanel').scrollIntoView({behavior:'smooth',block:'center'});$('assistantPrompt').focus();}
+function startBlank(){forgeUI?.openCad();resetProjectContext();setPropertiesOpen(false);showWorkspaceView('chat',false);params={...defaults,kind:'free',project:'Mi nuevo proyecto',freeDesign:null};sync();if(camera)resetView();$('assistantPrompt').placeholder='Un escudo en relieve, una luna, una botella, una maceta…';showWorkspaceView('chat',false);$('assistantPanel').scrollIntoView({behavior:'smooth',block:'center'});$('assistantPrompt').focus();}
 $('startBlank').onclick=startBlank;
 $('startPhoto').onclick=()=>{$('referenceFile').dataset.newProject='yes';$('referenceFile').click();};
-$('startTemplate').onclick=()=>{document.querySelector('.products').hidden=false;const products=document.querySelector('.products');products.classList.add('highlight');products.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>products.classList.remove('highlight'),2000);products.querySelector('button').focus();};
+$('startTemplate').onclick=()=>keychainDesigner?.open();
 $('startSaved').onclick=()=>{$('importProject').click();};
 $('referenceFile').onchange=async e=>{const input=e.target,file=input.files[0];try{if(!file)return;if(!['image/png','image/jpeg'].includes(file.type)||file.size>10e6)throw Error('Elegí una foto o dibujo PNG/JPG de hasta 10 MB.');const bitmap=await createImageBitmap(file);let url;try{const scale=Math.min(768/bitmap.width,768/bitmap.height,1),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));const ctx=canvas.getContext('2d');ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);url=canvas.toDataURL('image/jpeg',.8);}finally{bitmap.close();}if(url.length>850000)throw Error('La imagen es demasiado compleja. Usá una referencia más pequeña.');if(input.dataset.newProject==='yes')startBlank();referenceImage=url;$('referencePreview').src=url;$('referenceName').textContent=file.name+' · Se enviará con tu próximo mensaje.';$('referencePanel').hidden=false;$('assistantReply').textContent='Referencia lista. Contame qué querés construir a partir de ella y qué medidas conocés.';$('assistantPrompt').focus();}catch(error){toast(error.message);}finally{input.value='';delete input.dataset.newProject;}};
 $('removeReference').onclick=()=>{referenceImage=null;$('referencePreview').removeAttribute('src');$('referencePanel').hidden=true;};
@@ -289,7 +294,7 @@ modelInput.onchange=async()=>{const file=modelInput.files[0];modelInput.value=''
 // Proposal preview: the guide's piece is drawn translucent over the current one before applying it.
 function showGhost(built,candidate){previewModel=built;previewParams=candidate;if(!tools)return;tools.setGhost(built,partsOf(built,candidate));setGhostMode('proposal');$('loading').style.display='none';ghostFit=!model||Math.max(...(built.dimensions||[0]))>Math.max(...(model.dimensions||[1]))*1.3?built:null;if(camera)resetView(candidate.kind!=='free',false,built);$('ghostSwitch').hidden=false;}
 function hideGhost(){tools?.setGhost(null);ghostFit=null;previewModel=null;previewParams=null;if($('dimensions'))updatePreviewStats(false);if(params.kind==='free'&&!params.freeDesign&&$('loading'))$('loading').style.display='block';if($('ghostSwitch'))$('ghostSwitch').hidden=true;}
-function updatePreviewStats(showPreview){const ref=showPreview?previewModel:model,p=showPreview?previewParams:params;if(!p)return;document.querySelector('.live').innerHTML='<i></i>'+(showPreview?'PROPUESTA · SIN APLICAR':'PIEZA ACTUAL');$('dimensions').textContent=ref?sizeText(ref.dimensions||[p.width,p.height]):'Por definir';$('totalHeight').textContent=ref?ref.totalHeight.toFixed(1).replace('.',',')+' mm':'—';$('partLabel').textContent=p.kind==='free'?(p.forge?'Forge · sólido importado':'Diseño libre'):'Base + relieve';}
+function updatePreviewStats(showPreview){const ref=showPreview?previewModel:model,p=showPreview?previewParams:params;if(!p)return;document.querySelector('.live').innerHTML='<i></i>'+(showPreview?(p.kind==='keychain'?'TU LLAVERO · VISTA PREVIA':'PROPUESTA · SIN APLICAR'):'PIEZA ACTUAL');$('dimensions').textContent=ref?sizeText(ref.dimensions||[p.width,p.height]):'Por definir';$('totalHeight').textContent=ref?ref.totalHeight.toFixed(1).replace('.',',')+' mm':'—';$('partLabel').textContent=p.kind==='keychain'?'Logo + QR · '+ref.parts.length+' colores':p.kind==='free'?(p.forge?'Forge · sólido importado':'Diseño libre'):'Base + relieve';}
 function setGhostMode(mode){tools?.setGhostMode(mode);updatePreviewStats(mode!=='current'&&Boolean(previewModel));for(const b of document.querySelectorAll('[data-ghost]'))b.setAttribute('aria-pressed',String(b.dataset.ghost===mode));}
 for(const b of document.querySelectorAll('[data-ghost]'))b.onclick=()=>setGhostMode(b.dataset.ghost);
 
@@ -327,7 +332,7 @@ $('exportCoupon').onclick=async()=>{render();if(!model)return;try{const coupon=f
 
 // ---- Studio outputs: product photo and quote.
 function captureTarget(){return {renderer,scene,camera,hide:[stageGrid,tools?.overlay]};}
-{const box=document.createElement('section');box.className='studio-output';box.innerHTML='<p class="eyebrow">PARA MOSTRAR Y VENDER</p><div class="review-actions"><button type="button" id="productPhoto" class="secondary">Foto de producto</button><button type="button" id="quotePdf" class="secondary">Presupuesto (PDF)</button></div><p class="hint">La foto usa la vista actual: girá la pieza hasta el ángulo que más te guste.</p>';$('printReview').after(box);}
+{const box=document.createElement('section');box.className='studio-output';box.innerHTML='<p class="eyebrow">PARA MOSTRAR Y VENDER</p><div class="review-actions"><button type="button" id="productPhoto" class="secondary">Foto de producto</button><button type="button" id="quotePdf" class="secondary">Presupuesto (PDF)</button></div><p class="hint">La foto usa la vista actual: girá la pieza hasta el ángulo que más te guste.</p>';$('moreOutputs').append(box);}
 $('productPhoto').onclick=async()=>{render();if(!model||!camera)return;const blob=await productPhoto(captureTarget(),{title:params.project,subtitle:[settings.business,modelSize().map(v=>v.toFixed(0)).join(' × ')+' mm'].filter(Boolean).join(' · ')});download(blob,basename()+'-foto.png','image/png');toast('Foto de producto descargada.');};
 $('quotePdf').onclick=()=>{render();if(!model||!camera)return;if(!review)runReview();if(!review){toast('Esperá a que termine la revisión de impresión.');return;}
  const c=costOf(review,settings),colors=partsOf(model,params).filter(p=>p.mesh.triangles.length).map(p=>p.color),work=c.price-c.cost;
@@ -348,5 +353,25 @@ forgeUI=mountForge({host:assistant,api,getContext:()=>({current:params,pending:p
 }});
 // Keep the shared proposal reachable in either design mode.
 assistant.append($('proposalCard'));
-const forgeStart=document.createElement('button');forgeStart.id='startForge';forgeStart.className='start-card';forgeStart.innerHTML='<span>✦</span><b>Alfred Forge</b><small>Generá y corregí piezas · experimental.</small>';document.querySelector('.start-options').append(forgeStart);
-forgeStart.onclick=()=>{forgeUI.open();showWorkspaceView('chat',false);assistant.scrollIntoView({behavior:'smooth',block:'start'});};
+// A direct path for a common physical product: logo + link, without an AI detour.
+const keychainActions=document.createElement('section');keychainActions.id='keychainActions';keychainActions.className='keychain-result';keychainActions.hidden=true;
+keychainActions.innerHTML='<div><p class="eyebrow">TU LLAVERO DE DOS CARAS</p><strong id="keychainResultTitle"></strong><p id="keychainDestination"></p></div><div class="keychain-result-buttons"><button class="secondary" id="keychainFrontView">Ver frente</button><button class="secondary" id="keychainBackView">Ver dorso</button><button class="primary" id="keychainDownload" disabled>Guardar 3MF para Bambu Studio</button><button class="subtle" id="keychainEdit">Cambiar logo o enlace</button><details class="keychain-extra"><summary>Más opciones</summary><button class="secondary" id="keychainApply">Usar en el taller</button><button class="subtle" id="keychainCancel">Descartar</button></details></div>';
+document.querySelector('.workspace').before(keychainActions);
+function syncKeychainActions(){
+ const host=$('keychainActions');if(!host)return;const pending=proposal?.kind==='keychain',active=pending?proposal:params.kind==='keychain'?params:null;host.hidden=!active;document.querySelector('.workspace').classList.toggle('keychain-workspace',!!active);document.querySelector('.workspace-actions').hidden=!!active;if(!active)return;
+ $('keychainResultTitle').textContent=active.width+' × '+active.height+' mm · '+(pending?'vista previa lista':'llavero aplicado');$('keychainDestination').textContent='El QR lleva a '+active.qrText;
+ $('keychainApply').hidden=!pending;$('keychainCancel').hidden=!pending;$('keychainApply').disabled=assistantBusy||!!forgeUI?.isBusy();$('keychainDownload').hidden=false;$('keychainDownload').disabled=!(pending?previewModel:model);
+}
+$('keychainFrontView').onclick=()=>{showWorkspaceView('piece',false);if(camera)resetView(true,false,previewModel);};
+$('keychainBackView').onclick=()=>{showWorkspaceView('piece',false);if(camera)resetView(false,true,previewModel);};
+$('keychainApply').onclick=()=>$('applyProposal').click();$('keychainCancel').onclick=()=>$('discardProposal').click();
+$('keychainDownload').onclick=()=>{const output=proposal?.kind==='keychain'?previewModel:params.kind==='keychain'?model:null;if(output)download(threeMfBytes(output),safeName(output.params.project)+'.3mf','model/3mf');};
+$('keychainEdit').onclick=()=>{const active=proposal?.kind==='keychain'?proposal:params;keychainDesigner.open({keychain:active.keychain,url:active.qrText,width:active.width,height:active.height});};
+keychainDesigner=createKeychainDesigner({onError:toast,onCreate(config){
+ if(assistantBusy||forgeUI?.isBusy())throw Error('Esperá a que termine la consulta actual.');
+ const candidate=validate({...defaults,...config,kind:'keychain',project:('Llavero · '+config.keychain.name.replace(/\.[^.]+$/,'')).slice(0,60),shape:'round',thickness:3.2,relief:.6,hole:4,baseColor:'#ffffff',detailColor:'#30213d',caption:''}),built=buildModel(api,candidate);
+ clearProposal();visualDesigner.reset();forgeUI?.openCad();proposal=candidate;proposalBase=JSON.stringify(params);
+ $('proposalSummary').textContent='Logo original en el frente + QR en el dorso · '+sizeText(built.dimensions);$('proposalChanges').replaceChildren(...['Una sola pieza con agujero para argolla.','Logo completo adaptado a colores de filamento.','QR de color al ras del dorso, con margen libre.'].map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));
+ $('proposalCard').hidden=false;$('applyProposal').hidden=false;showGhost(built,candidate);syncKeychainActions();showWorkspaceView('piece',false);
+ $('assistantReply').textContent='Llavero listo. Revisá frente y dorso y guardá el 3MF. Usar en el taller es opcional.';keychainActions.scrollIntoView({behavior:'smooth',block:'start'});
+}});

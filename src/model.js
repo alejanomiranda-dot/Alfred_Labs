@@ -1,17 +1,23 @@
+import {buildKeychain,validateKeychain,keychainUrl} from './keychain.js';
 import {validateForgeArchive} from '../shared/forge-schema.js';
 import {validateGeneration} from './generation-spec.js';
 import QRCode from 'qrcode';
 import {validateProgram,buildSolidProgram,withImport} from './solid-program.js';
 import {maxStoredTriangles} from './mesh-import.js';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
-import fontData from 'three/examples/fonts/gentilis_bold.typeface.json' with { type: 'json' };
-const font = new FontLoader().parse(fontData);
-export const defaults = {version:3,kind:'tag',project:'Chapita de Mora',name:'MORA',phone:'11 2345 6789',qrText:'https://example.com',caption:'HECHO CON AMOR',shape:'round',width:45,height:32,thickness:2.4,relief:0.8,hole:4,baseColor:'#e9a08c',detailColor:'#fff8e9',backDecoration:'none',backStyle:'engraved',backDepth:.6,logoPolygons:null,freeDesign:null,importedMesh:null,sourceInfo:null,printRotation:[0,0,0],forge:null};
+import sansData from 'three/examples/fonts/helvetiker_bold.typeface.json' with { type: 'json' };
+import serifData from 'three/examples/fonts/gentilis_bold.typeface.json' with { type: 'json' };
+// Templates prefer a bold sans: its strokes stay printable at small sizes. It lacks accents and Ñ,
+// so a piece whose texts need them uses Gentilis throughout instead of altering the name.
+const sansFont = new FontLoader().parse(sansData), serifFont = new FontLoader().parse(serifData);
+const covers=(f,texts)=>texts.every(t=>[...String(t||'').normalize('NFC')].every(c=>c===' '||f.data.glyphs[c]));
+export function templateFont(p){const texts=p.kind==='tag'?[p.name,p.phone]:p.kind==='logo'?[p.caption]:[];return covers(sansFont,texts)?sansFont:serifFont;}
+export const defaults = {version:3,kind:'tag',project:'Chapita de Mora',name:'MORA',phone:'11 2345 6789',qrText:'https://example.com',caption:'HECHO CON AMOR',shape:'round',width:45,height:32,thickness:2.4,relief:0.8,hole:4,baseColor:'#e9a08c',detailColor:'#fff8e9',backDecoration:'none',backStyle:'engraved',backDepth:.6,logoPolygons:null,freeDesign:null,importedMesh:null,sourceInfo:null,printRotation:[0,0,0],forge:null,keychain:null};
 const limits={width:[25,100],height:[25,100],thickness:[1.6,6],relief:[.4,2],hole:[2,6],backDepth:[.2,1.2]};
 export function validate(raw){
   const p={};
   for(const k of Object.keys(defaults))p[k]=raw[k]??defaults[k];
-  if(!['tag','qr','logo','free'].includes(p.kind)||!['circle','round','oval','bone'].includes(p.shape))throw Error('Tipo de diseño o forma inválidos.');
+  if(!['tag','qr','logo','free','keychain'].includes(p.kind)||!['circle','round','oval','bone'].includes(p.shape))throw Error('Tipo de diseño o forma inválidos.');
   if(p.importedMesh!==null){const m=p.importedMesh;if(!m||typeof m.name!=='string'||m.name.length>120||!Array.isArray(m.vertices)||!Array.isArray(m.triangles)||m.vertices.length%3||m.triangles.length%3||!m.triangles.length||m.triangles.length>maxStoredTriangles*3)throw Error('La pieza importada es inválida o demasiado compleja.');if(!m.vertices.every(v=>typeof v==='number'&&Number.isFinite(v)&&Math.abs(v)<=1000))throw Error('La pieza importada tiene coordenadas inválidas.');const count=m.vertices.length/3;if(!m.triangles.every(v=>Number.isInteger(v)&&v>=0&&v<count))throw Error('La pieza importada tiene triángulos inválidos.');}
   if(p.freeDesign!==null)validateProgram(withImport(p.freeDesign,p));
   p.forge=validateForgeArchive(p.forge);
@@ -26,6 +32,7 @@ export function validate(raw){
   // Legacy "round" projects are rounded rectangles. A circle has one diameter.
   if(p.kind!=='free'&&p.shape==='circle')p.height=p.width;
   for(const [key,max] of Object.entries({project:60,name:20,phone:24,qrText:180,caption:20})){if(typeof p[key]!=='string'||p[key].length>max)throw Error(`El campo ${key} es demasiado largo.`);}
+  if(p.kind==='keychain'){p.keychain=validateKeychain(p.keychain);p.qrText=keychainUrl(p.qrText);}
   if(p.kind==='qr'&&!p.qrText.trim())throw Error('Agregá el texto o enlace del QR.');
   if(p.kind==='tag'&&!p.name.trim())throw Error('Agregá el nombre de la mascota.');
   for(const key of ['baseColor','detailColor'])if(!/^#[a-f0-9]{6}$/i.test(p[key]))throw Error('Color inválido.');
@@ -37,6 +44,7 @@ export function qrMatrix(text){return QRCode.create(text,{errorCorrectionLevel:'
 export function buildModel(api,raw){
  const p=validate(raw),{CrossSection:C,Manifold:M}=api,owned=[];
  if(p.kind==='free')return buildSolidProgram(api,p.freeDesign,p);
+ if(p.kind==='keychain')return buildKeychain(api,p);
  const own=x=>(owned.push(x),x);
  try{
   const w=p.width,h=p.height,t=p.thickness,r=p.relief;
@@ -51,7 +59,7 @@ export function buildModel(api,raw){
   const holeInside=own(hole.intersect(outline));if(hole.area()-holeInside.area()>.01)throw Error('El agujero no cabe en esta forma. Reducí su diámetro o aumentá la base.');
   const base2=own(outline.subtract(hole));
   let base=own(base2.extrude(t));
-  const details=[],warnings=[];let qr=null;
+  const details=[],warnings=[],font=templateFont(p);let qr=null;
   function fit(polys,maxW,maxH,cx,cy,flip=false){
    if(!polys.length)return;
    const pts=polys.flat();const xs=pts.map(v=>v[0]),ys=pts.map(v=>v[1]);
