@@ -10,7 +10,9 @@ function fakeSandbox({bad=false,oversize=false}={}){
 }
 test('remoto: VM efímera sin red ni secretos; solo la VM ejecuta OpenSCAD y siempre se detiene',async()=>{
  const sandbox=fakeSandbox();let options;
+ const read=sandbox.readFileToBuffer;sandbox.readFileToBuffer=async options=>options.path.endsWith('.json')?Buffer.from(JSON.stringify({ok:true,files:{stl:200},compiler:{backend:'manifold'}})):read(options);
  const result=await runRemoteForge({action:'compile',scad},{env,createSandbox:async o=>{options=o;return sandbox;}});
+ assert.deepEqual(result.compiler,{backend:'manifold'});
  assert.equal(options.networkPolicy,'deny-all');assert.equal(options.persistent,false);assert.equal(options.resources.vcpus,1);assert.deepEqual(options.env,{});assert.equal(options.source.snapshotId,'snap-test');assert.equal(sandbox.stops,1);
  assert.equal(JSON.stringify(options).includes('private-test'),false);assert.equal(result.remote,true);assert.ok(result.files.stl);
  const writes=sandbox.calls.find(c=>c[0]==='write')[1];assert.equal(writes[0].content.toString(),scad);assert.ok(writes[1].path.endsWith('worker.mjs'));

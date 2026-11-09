@@ -40,7 +40,7 @@ export async function runRemoteForge(raw,{env=process.env,signal,createSandbox=o
     if(!bytes||bytes.length!==data.files[ext])throw fail('El archivo compilado está incompleto.',422,'compile_failed');
     files[ext]=bytes.toString('base64');
    }
-   return {...result,files,created:new Date().toISOString(),remote:true};
+   return {...result,files,compiler:data.compiler,created:new Date().toISOString(),remote:true};
   }finally{signal?.removeEventListener('abort',stop);}
  }catch(e){
   if(signal?.aborted)throw fail('Generación detenida. Tu pieza se conservó.',499,'canceled');

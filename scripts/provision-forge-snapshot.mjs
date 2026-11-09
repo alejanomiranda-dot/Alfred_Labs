@@ -32,7 +32,7 @@ try{
  ]);
  const smoke=await sandbox.runCommand('node',['/vercel/sandbox/forge/worker.mjs']);
  const report=JSON.parse((await sandbox.readFileToBuffer({path:'/vercel/sandbox/forge/result.json'}))?.toString()||'null');
- if(smoke.exitCode!==0||!report?.ok||!report.files?.stl)throw Error('Falló la compilación aislada de la muestra: '+JSON.stringify(report));
+ if(smoke.exitCode!==0||!report?.ok||!report.files?.stl||report.compiler?.backend!=='manifold')throw Error('Falló la compilación aislada con Manifold: '+JSON.stringify(report));
  console.log('Muestra compilada: '+report.files.stl+' bytes de STL. Guardando imagen…');
  await sandbox.runCommand('node',['-e',"require('node:fs').rmSync('/vercel/sandbox/forge',{recursive:true,force:true})"]);
  const snapshot=await sandbox.snapshot({expiration:30*24*3600*1000});

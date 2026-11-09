@@ -4,7 +4,9 @@ import {spawn} from 'node:child_process';
 const directory='/vercel/sandbox/forge';
 const maxBytes=1024*1024;
 // Con OpenSCAD 2024 o posterior se usa el motor Manifold (segundos en vez de minutos).
-const openscad=await fs.access('/opt/openscad/AppRun').then(()=>'/opt/openscad/AppRun',()=>'/usr/bin/openscad');
+// En la VM, access() puede devolver EACCES aunque el ejecutable se pueda iniciar.
+// stat() comprueba que la imagen esté presente sin degradar silenciosamente al compilador viejo.
+const openscad=await fs.stat('/opt/openscad/AppRun').then(()=>'/opt/openscad/AppRun',()=>'/usr/bin/openscad');
 const backend=await new Promise(resolve=>{const c=spawn(openscad,['--help'],{stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',QT_QPA_PLATFORM:'offscreen'}});let t='';c.stdout.on('data',b=>t+=b);c.stderr.on('data',b=>t+=b);c.on('error',()=>resolve([]));c.on('close',()=>resolve(/manifold/i.test(t)?['--backend=manifold']:[]));});
 function compile(ext){
  return new Promise((resolve,reject)=>{
@@ -24,5 +26,5 @@ try{
  if(source.length<30||source.length>60000)throw {code:'invalid_source',message:'Fuente inválida.'};
  const files={};
  for(const ext of ['stl']){await compile(ext);const stat=await fs.stat(directory+'/piece.'+ext);if(stat.size<100||stat.size>=maxBytes)throw {code:'compile_size',message:'La pieza supera el tamaño permitido para la prueba en línea. Pedí menos detalle.'};files[ext]=stat.size;}
- await fs.writeFile(directory+'/result.json',JSON.stringify({ok:true,files}));
+ await fs.writeFile(directory+'/result.json',JSON.stringify({ok:true,files,compiler:{backend:backend.length?'manifold':'cgal'}}));
 }catch(e){await fs.writeFile(directory+'/result.json',JSON.stringify({ok:false,code:e.code||'compile_failed',error:e.message||'No se pudo compilar la pieza.'}));process.exitCode=1;}
