@@ -85,7 +85,7 @@ export function reviewPrint(mesh,volume,options={}){
  const shell=Math.min(volume,stats.area*opts.shell),material=shell+Math.max(0,volume-shell)*opts.infill+stats.supportVolume;
  const grams=material/1000*opts.density,layers=Math.ceil(stats.height/opts.layer),seconds=material/opts.flow+layers*opts.layerSeconds+opts.warmupSeconds;
  const issues=[];
- const parts=countParts(mesh);if(parts>1)issues.push({kind:'parts',text:`Tiene ${parts} partes que no se tocan: se imprimirían sueltas.`});
+ const parts=countParts(mesh),expectedParts=opts.expectedParts||1;if(parts>expectedParts)issues.push({kind:'parts',text:`Tiene ${parts} partes que no se tocan: se imprimirían sueltas.`});
  if(stats.overhang>20)issues.push({kind:'overhang',text:`Voladizos de ${Math.round(stats.overhang)} mm² con más de ${opts.overhangDeg}°: van a necesitar soportes.`});
  // Tips of letters and sharp corners are always thin at the very end: only warn when a real area is affected.
  const typical=thinHits.sort((x,y)=>x-y)[Math.floor(thinHits.length/2)];

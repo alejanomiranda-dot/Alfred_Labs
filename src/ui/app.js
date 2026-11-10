@@ -140,7 +140,7 @@ function recolorLogo(region,from,color){
 }
 function editProgram(program){try{const built=build(validate({...S.params,freeDesign:program}));pushHistory();markDirty();refresh({keepView:true,panel:false,built});return null;}catch(e){return e.message;}}
 let reviewTimer;
-function scheduleReview(){clearTimeout(reviewTimer);if(!S.model)return;const model=S.model;reviewTimer=setTimeout(()=>{if(model!==S.model)return;try{S.review=reviewPrint(model.combined,model.volume);}catch(e){console.error(e);S.review=null;}renderPieceStatus();printer.refresh();},280);}
+function scheduleReview(){clearTimeout(reviewTimer);if(!S.model)return;const model=S.model,expectedParts=S.params.freeDesign?.nodes?.some(n=>n.type==='lidded_box')?2:1;reviewTimer=setTimeout(()=>{if(model!==S.model)return;try{S.review=reviewPrint(model.combined,model.volume,{expectedParts});}catch(e){console.error(e);S.review=null;}renderPieceStatus();printer.refresh();},280);}
 function renderPieceStatus(){
  renderStatus($('pieceStatus'),{review:S.review,model:S.model,settings:S.settings,money,durationText,costOf,heatOn:S.heatOn,canOrient:S.params.kind==='free'&&!!S.review?.suggestion,
   onHeat:()=>{S.heatOn=!S.heatOn;viewer.tools.setHeat(S.heatOn&&S.review?[{mesh:S.review.highlight.overhang,color:'#ff5a5f'},{mesh:S.review.highlight.thin,color:'#ffb020'}]:null);renderPieceStatus();if(S.heatOn)toast('Rojo: partes que necesitan soporte. Naranja: paredes muy finas.');},
@@ -154,12 +154,14 @@ function quickSuggestionsFor(p){
  const mode=p.sourceInfo?.mode;
  if(mode==='lithophane_sphere')return ['Hacerla de 70 mm de diámetro','Agrandar entrada LED a 12 mm','Pasar a litofanía curva de mesa'];
  if(mode==='lithophane_cylinder')return ['Cambiar diámetro a 90 mm','Pasar a bola de Navidad de 80 mm','Pasar a litofanía curva de mesa'];
- if(mode==='lithophane_arc'||mode==='lithophane')return ['Pasar a litofanía curva de mesa','Pasar a bola de Navidad de 80 mm','Pasar a fanal cilíndrico 360°'];
+ if(mode==='lithophane_arc')return ['Pasar a fanal cilíndrico 360°','Pasar a bola de Navidad de 80 mm','Pasar a litofanía plana con marco'];
+ if(mode==='lithophane')return ['Pasar a litofanía curva de mesa','Pasar a bola de Navidad de 80 mm','Pasar a fanal cilíndrico 360°'];
  if(mode==='cutter')return ['Agrandar el cortante a 90 mm','Subir el filo a 14 mm','Pasar a placa en relieve'];
  if(mode==='relief')return ['Pasar a 4 colores para AMS','Convertir en cortante de galletitas','Agrandar a 100 × 100 mm'];
  if(p.kind==='keychain')return ['Agrandar a 60 × 70 mm','El nombre en negro','Base de 3,6 mm de grosor'];
  if(p.kind!=='free')return ['Hacerla circular de 40 mm','Agregar un huesito grabado atrás','Agrandar el agujero a 5 mm'];
  if(p.forge)return ['Hacerla de 100 mm de alto','Darle acabado facetado (low-poly)','Darle textura tejida'];
+ if(p.freeDesign?.nodes?.some(n=>n.type==='lidded_box'))return ['División interna al medio','Paredes de 3 mm de espesor','Grabar un texto en la tapa'];
  return ['Agregarle tapa con encastre','Paredes de 3 mm de espesor','Grabar un texto en el frente'];
 }
 function addMessage(role,content,extra={}){S.conversation.push({role,content,...extra});renderConversation();updateMode();}

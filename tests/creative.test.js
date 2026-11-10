@@ -161,7 +161,8 @@ test('litofanía curva autoportante, pantalla cilíndrica 360° y cortante con s
   p[i]=p[i+1]=p[i+2]=v;p[i+3]=255;
  }
  const arcSpec=validateGeneration({mode:'lithophane_arc',subject:'Portarretrato curvo en litofanía',width:90,height:70,baseThickness:.8,depth:2.2});
- const arcMesh=reliefMesh(p,n,n,arcSpec);edgesClosed(arcMesh);
+ const arcMesh=reliefMesh(new Uint8ClampedArray(256*199*4).fill(200),256,199,arcSpec);edgesClosed(arcMesh);
+ assert.ok(arcMesh.triangles.length/3<150000,'litofanía curva en 256×199 respeta el tope de 150.000 triángulos: '+(arcMesh.triangles.length/3));
  const arcModel=buildModel(api,generatedParams(defaults,arcMesh,arcSpec));edgesClosed(arcModel.combined);
  assert.ok(arcModel.volume>1000,'volumen positivo en litofanía curva: '+arcModel.volume);
  assert.ok(Math.abs(arcModel.dimensions[2]-70)<1.5);
