@@ -56,3 +56,17 @@ test('una figura nunca promete colores: el mensaje se corrige si los menciona',a
  r=await proposeDesign({prompt:'Busto con mis rasgos y a color'},'test-key',reply({route:'relief',message:'Armo un retrato en relieve a colores.',canApply:false,params:defaults,generation:{mode:'relief',subject:'Retrato',width:80,height:100,baseThickness:2,depth:2,palette:['#ffffff','#e0b49a','#2a2a2a'],redraw:true}}));
  assert.equal(r.route,'relief');assert.equal(r.generation.redraw,true);assert.deepEqual(r.generation.palette,['#ffffff','#e0b49a','#2a2a2a']);
 });
+test('varias imágenes en un pedido llegan todas, numeradas y con su nombre; los excesos se rechazan sin llamar a la API',async()=>{
+ let payload;const fetcher=async(url,opts)=>{payload=JSON.parse(opts.body);return {ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify({message:'Veo las dos vistas',canApply:false,params:defaults})}]}]})};};
+ const a='data:image/png;base64,aGVsbG8=',b='data:image/jpeg;base64,b3Rybw==';
+ await proposeDesign({prompt:'Este soporte, de frente y de costado',params:defaults,imageDataUrls:[a,b],imageNames:['frente.png','costado.jpg']},'test-key',fetcher);
+ const content=payload.input.at(-1).content,request=JSON.parse(content[0].text);
+ assert.deepEqual(content.filter(c=>c.type==='input_image').map(c=>c.image_url),[a,b]);
+ assert.equal(content[1].text,'Imagen 1 de 2: frente.png');assert.equal(content[3].text,'Imagen 2 de 2: costado.jpg');
+ assert.equal(request.imagenesAdjuntas.cantidad,2);assert.deepEqual(request.imagenesAdjuntas.orden,['frente.png','costado.jpg']);assert.match(request.imagenAdjunta,/VARIAS IMÁGENES/);
+ const fail=()=>{throw Error('No se debe llamar');};
+ await assert.rejects(proposeDesign({prompt:'x',imageDataUrls:Array(7).fill(a)},'test-key',fail),/hasta 6/);
+ await assert.rejects(proposeDesign({prompt:'x',imageDataUrls:[a,'https://example.com/b.png']},'test-key',fail),/referencia/);
+ await assert.rejects(proposeDesign({prompt:'x',imageDataUrls:a},'test-key',fail),/referencia/);
+ const big='data:image/jpeg;base64,'+'A'.repeat(800000);await assert.rejects(proposeDesign({prompt:'x',imageDataUrls:[big,big,big,big,big]},'test-key',fail),/pesan demasiado/);
+});

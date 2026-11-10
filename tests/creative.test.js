@@ -116,3 +116,8 @@ test('colores casi iguales de la paleta se unen para no gastar un carrete',()=>{
  assert.deepEqual(validateGeneration({...spec,palette:['#ffffff','#d6a080','#1a1715','#111111']}).palette,['#ffffff','#d6a080','#1a1715']);
  assert.deepEqual(validateGeneration({...spec,palette:['#ffffff','#d6a080','#a86a4a','#111111']}).palette,['#ffffff','#d6a080','#a86a4a','#111111']);
 });
+test('la generación visual combina varias referencias en una sola edición',async()=>{
+ let sent;const fetcher=async(url,options)=>{sent={url,...options};return {ok:true,json:async()=>({data:[{b64_json:'aGVsbG8='}]})};};
+ const r=await generateVisual({spec,imageDataUrls:['data:image/png;base64,aGVsbG8=','data:image/jpeg;base64,b3Rybw==']},'test-key',fetcher);
+ assert.match(sent.url,/images\/edits$/);assert.equal(sent.body.getAll('image[]').length,2);assert.ok(!sent.body.has('image'));assert.equal(r.interpretation,false);
+});

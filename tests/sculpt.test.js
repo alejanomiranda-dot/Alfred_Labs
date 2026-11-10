@@ -127,3 +127,11 @@ test('el dragoncito en colores se separa en partes por color, con el acabado, y 
  assert.equal(buildModel(api,checked.candidate).parts.length,3);
  assert.ok(threeMfBytes(checked.built).length>1000);
 });
+test('el escultor recibe varias vistas del mismo sujeto, cada una con su nombre',async()=>{
+ let sent;const fetcher=async(u,init)=>{sent=JSON.parse(init.body);return reply(sculptReply);};
+ const a='data:image/png;base64,iVBORw0KGgo=',b='data:image/jpeg;base64,b3Rybw==';
+ await generateSculpt({prompt:'mi perro',imageDataUrls:[a,b],imageNames:['frente.png','perfil.jpg']},{OPENAI_API_KEY:'k'},fetcher);
+ const content=sent.input.at(-1).content;
+ assert.deepEqual(content.filter(c=>c.type==='input_image').map(c=>c.image_url),[a,b]);assert.equal(content[3].text,'Imagen 2 de 2: perfil.jpg');
+ assert.throws(()=>validateSculptRequest({prompt:'gato',imageDataUrls:Array(7).fill(a)}),/hasta 6/);
+});
