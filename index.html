@@ -34,7 +34,7 @@
   <div id="viewer"></div>
   <div class="hero" id="hero">
    <h1>¿Qué querés imprimir?</h1>
-   <p>Contalo con tus palabras. Podés sumar una foto, un logo o un archivo 3D.</p>
+   <p>Contalo con tus palabras. Podés sumar varias fotos, un logo o un archivo 3D.</p>
    <div id="heroComposer"></div>
    <div class="suggestions" id="suggestions" aria-label="Ejemplos">
     <button type="button" data-suggestion="Un llavero con mi logo adelante y un QR a mi web atrás">Llavero con mi logo y un QR</button>
@@ -72,7 +72,7 @@
   <div class="attach">
    <button type="button" id="attachToggle" class="icon" aria-label="Adjuntar" aria-expanded="false" aria-controls="attachMenu"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg></button>
    <div id="attachMenu" class="menu" role="menu" hidden>
-    <button type="button" role="menuitem" data-attach="image">Foto, dibujo o logo</button>
+    <button type="button" role="menuitem" data-attach="image">Fotos, dibujos o logos</button>
     <button type="button" role="menuitem" data-attach="model">Archivo 3D (STL o 3MF)</button>
     <button type="button" role="menuitem" data-attach="project">Abrir un proyecto guardado</button>
     <button type="button" role="menuitem" data-attach="spare">Guía para medir un repuesto</button>
@@ -85,7 +85,7 @@
 </form>
 <dialog id="printDialog" class="sheet" aria-labelledby="printTitle"></dialog>
 <dialog id="library" class="sheet" aria-labelledby="libraryTitle"><div class="sheet-head"><h2 id="libraryTitle">Mis diseños</h2><button type="button" class="icon" id="closeLibrary" aria-label="Cerrar"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></div><p class="hint" id="libraryHint">Cada pieza que arma Alfred se guarda sola en este navegador, con sus versiones. Desde acá podés volver a abrir o descargar el 3MF de cualquiera.</p><div id="libraryList"></div><p class="hint library-privacy"><a href="privacidad.html" target="_blank" rel="noopener">Privacidad: qué datos usa Alfred y cómo borrarlos</a></p></dialog>
-<input id="imageFile" type="file" accept="image/png,image/jpeg" hidden>
+<input id="imageFile" type="file" accept="image/png,image/jpeg" multiple hidden>
 <input id="modelFile" type="file" accept=".stl,.3mf" hidden>
 <input id="importProject" type="file" accept=".json,.3mf" hidden>
 <div id="toast" role="status"></div>

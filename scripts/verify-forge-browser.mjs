@@ -85,7 +85,7 @@ try{
  await page.waitForFunction(()=>!document.getElementById('attachments').hidden);
  assistantReply=reply({route:'relief',message:'Paso la luna a relieve de 60 × 50 mm.',generation:{mode:'relief',subject:'Luna de prueba',width:60,height:50,baseThickness:2,depth:3}});
  await send('Convertí la luna adjunta en relieve de 60 por 50 mm');
- assert.match(await dims(),/^60 × 50/);assert.ok(assistantBodies.at(-1).imageDataUrl.startsWith('data:image/'));
+ assert.match(await dims(),/^60 × 50/);assert.ok(assistantBodies.at(-1).imageDataUrls[0].startsWith('data:image/'));
  assert.equal(assistantBodies.filter(b=>b.action==='generateVisual').length,0);
  assert.ok(await page.locator('h3',{hasText:'Tamaño del relieve'}).count());
  await page.locator('#printOpen').click();await page.locator('#printDialog summary',{hasText:'Más formatos'}).click();
@@ -120,6 +120,16 @@ try{
  // 10. Abrir desde «Mis diseños» recupera la pieza de Forge guardada.
  await page.locator('#libraryToggle').click();await page.locator('.library-card button',{hasText:'Abrir'}).first().click();
  assert.match(await dims(),/78 × 78 × 140/);
+
+ // 10b. Logo y QR en un solo pedido: se adjuntan juntos y Alfred arma el llavero sin volver a pedir nada.
+ page.once('dialog',d=>d.accept());await page.locator('#newProject').click();await page.waitForFunction(()=>document.body.dataset.mode==='empty');
+ const together=assistantBodies.length;
+ await page.locator('#imageFile').setInputFiles([{name:'logo-junto.png',mimeType:'image/png',buffer:Buffer.from(logo,'base64')},{name:'qr-junto.png',mimeType:'image/png',buffer:qrImage}]);
+ await page.waitForFunction(()=>document.querySelectorAll('#attachments .chip').length===2);
+ await send('Un llavero con mi logo adelante y un QR atrás');
+ assert.match(await dims(),/^50 × 60/);assert.equal(assistantBodies.length,together);
+ assert.match(await lastAssistant(),/Leí el destino de qr-junto.png/);
+ assert.equal(await page.locator('.msg.user').last().locator('.msg-images img').count(),2);
 
  // 11. Temas y celular.
  await page.locator('#themeToggle').click();assert.equal(await page.evaluate(()=>document.documentElement.dataset.theme),'light');

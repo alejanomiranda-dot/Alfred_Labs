@@ -128,6 +128,10 @@ body[data-mode=empty] .chat,body[data-mode=empty] .piece,body[data-mode=empty] .
 .chip img{width:36px;height:36px;object-fit:cover;border-radius:6px;background:#fff}
 .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}
 .chip button{padding:2px 7px;font-size:12px}
+.attach-count{flex-basis:100%;font-size:11.5px;color:var(--text-3)}
+.composer.dropping{border-color:var(--accent);border-style:dashed}
+.msg-images{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.msg-images img{display:block;max-width:120px;max-height:96px;border-radius:8px;background:#fff;object-fit:cover}
 
 /* ---------- Escenario 3D ---------- */
 .stage{position:relative;min-height:0;background:var(--stage);overflow:hidden}

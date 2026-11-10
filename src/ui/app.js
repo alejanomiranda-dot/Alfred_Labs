@@ -35,7 +35,7 @@ const sizeText=v=>v.map(x=>String(Math.round(x*10)/10).replace('.',',')).join(' 
 const tick=()=>new Promise(r=>setTimeout(r,30));
 class Stale extends Error{}
 
-const S={api:null,params:emptyParams(),model:null,history:[],future:[],lastPush:0,conversation:[],attachment:null,busy:false,busyText:'',controller:null,
+const S={api:null,params:emptyParams(),model:null,history:[],future:[],lastPush:0,conversation:[],attachments:[],busy:false,busyText:'',controller:null,
  review:null,heatOn:false,settings:loadSettings(),projectId:null,relief:null,pendingIntent:null,keychainDraft:null,forgeStatus:undefined,epoch:0,dirty:false,assistantReady:location.hostname==='127.0.0.1',imageTarget:'attach'};
 
 const hasPiece=()=>!(S.params.kind==='free'&&!S.params.freeDesign);
@@ -157,7 +157,11 @@ function renderConversation(){
    if(i===lastEvent&&S.history.length){const b=document.createElement('button');b.type='button';b.textContent='Deshacer';b.onclick=undo;row.append(b);}
   }else{
    row.textContent=m.content;
-   if(m.image){const img=document.createElement('img');img.src=m.image;img.alt=m.imageName||'Imagen adjunta';img.style.cssText='display:block;max-width:160px;max-height:120px;border-radius:8px;margin-top:6px;background:#fff';row.append(img);}
+   if(m.images?.length){
+    const strip=document.createElement('div');strip.className='msg-images';
+    for(const a of m.images){const img=document.createElement('img');img.src=a.src;img.alt=a.name||'Imagen adjunta';img.title=a.name||'';strip.append(img);}
+    row.append(strip);
+   }
   }
   host.append(row);
  });
@@ -179,17 +183,17 @@ async function post(url,body,timeout=200000){
 
 async function send(text){
  const prompt=(text??$('prompt').value).trim();if(!prompt||S.busy)return;
- const attachment=S.attachment;$('prompt').value='';autosize();clearAttachment();
- addMessage('user',prompt,attachment?{image:attachment.preview,imageName:attachment.name}:{});
+ const attachments=S.attachments;$('prompt').value='';autosize();clearAttachments();
+ addMessage('user',prompt,attachments.length?{images:attachments.map(a=>({src:a.preview,name:a.name}))}:{});
  const epoch=S.epoch;S.controller=new AbortController();setBusy(true);
  try{
   // Cambios de color del llavero actual («el nombre en negro»): se resuelven acá, sin rearmarlo ni consultar a la IA.
-  const recolor=!attachment&&hasPiece()&&S.params.kind==='keychain'?planKeychainColorChange(S.params,prompt):null;
+  const recolor=!attachments.length&&hasPiece()&&S.params.kind==='keychain'?planKeychainColorChange(S.params,prompt):null;
   if(recolor){keychainColorChange(recolor);return;}
-  const wantsKeychain=isTwoSidedKeychain(prompt)||(S.pendingIntent==='keychain'&&(attachment||findUrl(prompt)));
+  const wantsKeychain=isTwoSidedKeychain(prompt)||(S.pendingIntent==='keychain'&&(attachments.length||findUrl(prompt)));
   if(!wantsKeychain)S.pendingIntent=null;
-  if(wantsKeychain)await keychainFlow(prompt,attachment,epoch);
-  else await assistantFlow(prompt,attachment,epoch);
+  if(wantsKeychain)await keychainFlow(prompt,attachments,epoch);
+  else await assistantFlow(prompt,attachments,epoch);
  }catch(e){
   if(e instanceof Stale||epoch!==S.epoch)return;
   addMessage('assistant',S.controller.signal.aborted?'Detuve el pedido. Podés escribirlo de nuevo cuando quieras.':e.message);
@@ -217,21 +221,26 @@ function keychainEdit(result){
 }
 // Llavero logo + QR: se arma en el navegador con el archivo original, sin generar imágenes.
 const colorsOf=built=>new Set(built.parts.slice(1).map(part=>part.color.toLowerCase())).size;
-async function keychainFlow(prompt,attachment,epoch){
+async function keychainFlow(prompt,attachments,epoch){
  const draft=S.keychainDraft||(S.keychainDraft={});
  S.pendingIntent='keychain';
  if(!draft.logo&&S.params.kind==='keychain'){draft.logo=S.params.keychain;draft.qrText??=S.params.qrText;}
- if(attachment){
-  setBusy(true,'Leyendo el archivo adjunto…');const qr=await readQrImage(attachment.file);check(epoch);
+ // Cada archivo se mira por separado: el que tiene un QR legible da el enlace y el otro es el logo,
+ // así el logo y el QR pueden llegar juntos en un solo pedido.
+ const logos=[];
+ for(const [i,attachment] of attachments.entries()){
+  setBusy(true,attachments.length>1?'Leyendo los archivos adjuntos ('+(i+1)+' de '+attachments.length+')…':'Leyendo el archivo adjunto…');const qr=await readQrImage(attachment.file);check(epoch);
   if(qr){draft.qrText=keychainUrl(qr);draft.qrName=attachment.name;}
-  else{
-   if(/\bqr\b/i.test(attachment.name)||draft.logo&&/\bqr\b/i.test(prompt)&&!/cambi[aá]|reemplaz|nuevo logo/i.test(prompt))throw Error('No pude leer el QR adjunto. Conservé el logo; probá con un PNG más nítido o escribí el enlace.');
-   setBusy(true,'Preparando los colores y contornos del logo…');const r=await readKeychainLogo(attachment.file,attachment.name);check(epoch);draft.logo=r.config;
-  }
+  else if(/\bqr\b/i.test(attachment.name)||attachments.length===1&&draft.logo&&/\bqr\b/i.test(prompt)&&!/cambi[aá]|reemplaz|nuevo logo/i.test(prompt))throw Error('No pude leer el QR de '+attachment.name+'. Conservé el logo; probá con un PNG más nítido o escribí el enlace.');
+  else logos.push(attachment);
+ }
+ if(logos.length){
+  setBusy(true,'Preparando los colores y contornos del logo…');const r=await readKeychainLogo(logos[0].file,logos[0].name);check(epoch);draft.logo=r.config;
+  if(logos.length>1)addMessage('assistant','Recibí '+logos.length+' imágenes sin QR; usé '+logos[0].name+' como logo. Si era otra, adjuntala sola.');
  }
  const url=findUrl(prompt);if(url)draft.qrText=url;
  if(!draft.logo&&S.params.kind==='keychain')draft.logo=S.params.keychain;
- if(!draft.logo){S.pendingIntent='keychain';addMessage('assistant',(draft.qrText?'Leí el QR: lleva a '+draft.qrText+'. ':'Dale. ')+ 'Adjuntá el logo con el botón + (mejor un PNG con fondo transparente o un JPG con fondo blanco)'+(draft.qrText?'.':' y adjuntá el QR o decime su enlace.'));return;}
+ if(!draft.logo){S.pendingIntent='keychain';addMessage('assistant',(draft.qrText?'Leí el QR: lleva a '+draft.qrText+'. ':'Dale. ')+ 'Adjuntá el logo con el botón + (mejor un PNG con fondo transparente o un JPG con fondo blanco)'+(draft.qrText?'.':' y el QR, los dos juntos si querés, o decime su enlace.'));return;}
  if(!draft.qrText){S.pendingIntent='keychain';addMessage('assistant','Ya tengo el logo. Adjuntá la imagen del QR con el botón + o escribí la dirección a la que tiene que llevar.');return;}
  setBusy(true,'Armando las dos caras del llavero…');await tick();check(epoch);
  const name=draft.logo.name.replace(/\.[^.]+$/,'');
@@ -241,12 +250,14 @@ async function keychainFlow(prompt,attachment,epoch){
  apply(candidate,built,'Llavero con logo y QR');
 }
 
-async function assistantFlow(prompt,attachment,epoch){
+// Las imágenes adjuntas viajan juntas, en el orden en que se sumaron, con sus nombres para que Alfred las distinga.
+const imagesBody=attachments=>attachments.length?{imageDataUrls:attachments.map(a=>a.dataUrl),imageNames:attachments.map(a=>a.name)}:{};
+async function assistantFlow(prompt,attachments,epoch){
  if(!S.assistantReady){addMessage('assistant','El asistente con IA no está disponible en este servidor. Podés abrir un proyecto, importar un STL o armar un llavero con logo y QR.');return;}
  const base=S.params,params=Object.fromEntries(assistantFields.filter(k=>k in base).map(k=>[k,base[k]]));
  const currentEngine=!hasPiece()?'none':base.forge?(isSculpt(base.forge)?'sculpt':'forge'):base.sourceInfo?'relief':base.kind==='keychain'?'keychain':base.kind==='free'?'cad':'template';
  const body={prompt,currentEngine,style:S.settings,params,history:recentHistory().slice(0,-1),
-  ...(attachment?{imageDataUrl:attachment.dataUrl}:{}),
+  ...imagesBody(attachments),
   ...(base.sourceInfo?{pendingGeneration:base.sourceInfo}:{}),
   ...(base.importedMesh&&!base.sourceInfo?{importedSummary:{name:base.project,size:sizeOf(S.model||build(base)),...describeImport(S.api,base.importedMesh)}}:{})};
  let result,checked=null,correction;
@@ -254,11 +265,11 @@ async function assistantFlow(prompt,attachment,epoch){
   if(attempt>1)setBusy(true,'Revisando la pieza y corrigiendo medidas…');
   result=await post('/api/assistant',{...body,...(correction?{correction}:{})});check(epoch);
   if(S.params!==base)throw Error('Cambiaste la pieza mientras pensaba. Volvé a enviar el pedido para incluir esos cambios.');
-  if(result.route==='relief')return reliefFlow(result,attachment,epoch);
+  if(result.route==='relief')return reliefFlow(result,attachments,epoch);
   if(result.route==='forge'){addMessage('assistant',result.message);return forgeFlow('generate',result.forgePrompt,epoch,undefined,result.expectedSize,{title:prompt});}
-  if(result.route==='sculpt'){addMessage('assistant',result.message);return sculptFlow('generate',result.forgePrompt,epoch,{expected:result.expectedSize,attachment,title:prompt});}
-  if(result.route==='keychain'&&base.kind==='keychain'&&!attachment&&!isTwoSidedKeychain(prompt))return keychainEdit(result);
-  if(result.route==='keychain'){const url=result.params?.qrText&&result.params.qrText!==defaults.qrText?findUrl(result.params.qrText):null;if(url)(S.keychainDraft||(S.keychainDraft={})).qrText=url;return keychainFlow(prompt,attachment,epoch);}
+  if(result.route==='sculpt'){addMessage('assistant',result.message);return sculptFlow('generate',result.forgePrompt,epoch,{expected:result.expectedSize,attachments,title:prompt});}
+  if(result.route==='keychain'&&base.kind==='keychain'&&!attachments.length&&!isTwoSidedKeychain(prompt))return keychainEdit(result);
+  if(result.route==='keychain'){const url=result.params?.qrText&&result.params.qrText!==defaults.qrText?findUrl(result.params.qrText):null;if(url)(S.keychainDraft||(S.keychainDraft={})).qrText=url;return keychainFlow(prompt,attachments,epoch);}
   if(!result.canApply){addMessage('assistant',result.message);return;}
   try{checked=checkProposal(S.api,base,result);break;}catch(e){correction={error:e.message.slice(0,1500),program:result.params.freeDesign??null};}
  }
@@ -276,26 +287,26 @@ async function assistantFlow(prompt,attachment,epoch){
  apply(candidate,built);
 }
 
-// Relieve: con imagen adjunta se usa tal cual; si no, se genera. Cambiar medidas después no vuelve a generar.
-async function reliefFlow(result,attachment,epoch){
+// Relieve: con una imagen adjunta (logo o dibujo) se usa tal cual; si no, se genera. Cambiar medidas después no vuelve a generar.
+async function reliefFlow(result,attachments,epoch){
  const spec=validateGeneration(result.generation);addMessage('assistant',result.message);
- // direct: la imagen es la propia (logo o dibujo) y se convierte tal cual. reference: la foto o imagen original
- // de la persona, que se conserva para volver a dibujar con otros colores o medidas.
- let image=null,invert=false,direct=false,reference=attachment?.dataUrl||S.relief?.reference||null;
+ // direct: la imagen es la propia (logo o dibujo) y se convierte tal cual. references: las fotos o imágenes originales,
+ // que se conservan para volver a dibujar con otros colores o medidas. Con varias adjuntas se dibuja combinándolas.
+ let image=null,invert=false,direct=false,references=attachments.length?attachments.map(a=>a.dataUrl):S.relief?.references||[];
  const samePalette=S.relief&&(S.relief.spec.palette||[]).join()===spec.palette.join();
- if(attachment&&!spec.redraw){image=attachment.dataUrl;direct=true;}
+ if(attachments.length===1&&!spec.redraw){image=attachments[0].dataUrl;direct=true;}
  // Una imagen propia se vuelve a convertir con los colores nuevos, sin redibujarla.
- else if(!attachment&&S.relief&&S.relief.spec.subject===spec.subject&&(samePalette||S.relief.direct)){image=S.relief.image;invert=S.relief.invert;direct=S.relief.direct;}
+ else if(!attachments.length&&S.relief&&S.relief.spec.subject===spec.subject&&(samePalette||S.relief.direct)){image=S.relief.image;invert=S.relief.invert;direct=S.relief.direct;}
  else{
-  // Una foto se redibuja en colores planos; pasar a colores (o cambiarlos) también redibuja, con la original de referencia.
-  if(!/^data:image\/(png|jpeg);base64,/.test(reference||'')||reference.length>850000)reference=null;
-  setBusy(true,reference&&spec.redraw?'Dibujando el retrato en colores a partir de la foto… puede tardar hasta dos minutos.':spec.palette.length?'Dibujando el motivo en sus colores… puede tardar hasta dos minutos.':'Dibujando la imagen del relieve… puede tardar hasta dos minutos.');
-  const data=await post('/api/assistant',{action:'generateVisual',spec,...(reference?{imageDataUrl:reference}:{})},200000);check(epoch);image=data.imageDataUrl;
+  // Una foto se redibuja en colores planos; pasar a colores (o cambiarlos) también redibuja, con las originales de referencia.
+  references=references.filter(r=>/^data:image\/(png|jpeg);base64,/.test(r)&&r.length<=850000);
+  setBusy(true,references.length&&spec.redraw?'Dibujando el retrato en colores a partir de '+(references.length>1?'las fotos':'la foto')+'… puede tardar hasta dos minutos.':spec.palette.length?'Dibujando el motivo en sus colores… puede tardar hasta dos minutos.':'Dibujando la imagen del relieve… puede tardar hasta dos minutos.');
+  const data=await post('/api/assistant',{action:'generateVisual',spec,...(references.length?{imageDataUrls:references}:{})},200000);check(epoch);image=data.imageDataUrl;
  }
  setBusy(true,spec.palette.length?'Separando los colores en partes…':'Construyendo el relieve en 3D…');await tick();
  const mesh=await reliefFromImage(image,spec,{invert});check(epoch);
  const candidate=validate(generatedParams(S.params,mesh,spec)),built=build(candidate);
- S.relief={image,spec,invert,direct,reference};
+ S.relief={image,spec,invert,direct,references};
  if(mesh.missing?.length)addMessage('assistant','No encontré en la imagen '+(mesh.missing.length===1?'el color '+mesh.missing[0]:'los colores '+mesh.missing.join(', '))+'; la pieza quedó con el resto.');
  apply(candidate,built,(spec.palette.length?'Relieve en '+spec.palette.length+' colores de ':'Relieve de ')+spec.width+' × '+spec.height+' mm');
 }
@@ -370,7 +381,7 @@ async function forgeFlow(action,prompt,epoch,scad,expected=null,{polish=true,not
 }
 // Figuras orgánicas: OpenAI describe piezas suaves que se funden y el navegador arma un solo sólido cerrado,
 // con base plana y a la medida pedida. No necesita OpenSCAD. Pasa por los mismos controles, el acabado y la revisión visual.
-async function sculptFlow(action,prompt,epoch,{expected=null,attachment=null,polish=true,note='Figura generada',title=prompt}={}){
+async function sculptFlow(action,prompt,epoch,{expected=null,attachments=[],polish=true,note='Figura generada',title=prompt}={}){
  const archive=S.params.forge,previous=archive?.revisions.find(r=>r.id===archive.selected),before=previous?.sculpt?S.model?.dimensions:null;
  let result;
  if(action==='compile')result={...previous};
@@ -378,7 +389,7 @@ async function sculptFlow(action,prompt,epoch,{expected=null,attachment=null,pol
   setBusy(true,'Esculpiendo la figura… puede tardar un par de minutos.');
   result=await post('/api/assistant',{action:'sculpt',prompt,history:recentHistory().slice(-8).map(m=>({...m,content:m.content.slice(0,2000)})),
    ...(previous?.sculpt?{previous:previous.sculpt,previousFinish:finishOf(S.params.freeDesign)}:{}),
-   ...(expected?{expectedSize:expected}:{}),...(attachment?{imageDataUrl:attachment.dataUrl}:{})},200000);check(epoch);
+   ...(expected?{expectedSize:expected}:{}),...imagesBody(attachments)},200000);check(epoch);
  }
  // Medida final: la pedida; si no, la de la versión anterior (un cambio no la achica ni la agranda); si no, 80 mm de alto.
  const target=action==='compile'?result.sculpt.target||null:expected?.some(v=>v>0)?expected:before?[0,0,Math.round(before[2]*10)/10]:null;
@@ -451,35 +462,66 @@ for(const b of menu.querySelectorAll('[data-attach]'))b.onclick=()=>{
  else if(kind==='project')$('importProject').click();
  else openSparePart(S.settings,text=>{prompt.value=text;autosize();send();});
 };
-function clearAttachment(){S.attachment=null;$('attachments').hidden=true;$('attachments').replaceChildren();}
-function showAttachment(){
- const a=S.attachment,host=$('attachments');host.replaceChildren();if(!a){host.hidden=true;return;}
- const chip=document.createElement('div');chip.className='chip';
- const img=document.createElement('img');img.src=a.preview;img.alt='';
- const name=document.createElement('span');name.textContent=a.name;
- const measure=document.createElement('button');measure.type='button';measure.className='ghost';measure.textContent='Medir';measure.title='Medir en la foto con una referencia de tamaño';
- measure.onclick=()=>openPhotoMeasure(a.dataUrl,text=>{prompt.value=(prompt.value.trim()?prompt.value.trim()+' ':'')+text;autosize();prompt.focus();});
- const remove=document.createElement('button');remove.type='button';remove.className='ghost';remove.textContent='Quitar';remove.onclick=clearAttachment;
- chip.append(img,name,measure,remove);host.append(chip);host.hidden=false;
+// Hasta 6 imágenes por pedido: Alfred las mira todas juntas (vistas de una pieza, la pieza y su lugar, logo y QR…).
+const maxAttachments=6;
+function clearAttachments(){S.attachments=[];showAttachments();}
+function showAttachments(){
+ const list=S.attachments,host=$('attachments');host.replaceChildren();if(!list.length){host.hidden=true;return;}
+ for(const a of list){
+  const chip=document.createElement('div');chip.className='chip';
+  const img=document.createElement('img');img.src=a.preview;img.alt='';
+  const name=document.createElement('span');name.textContent=a.name;name.title=a.name;
+  const measure=document.createElement('button');measure.type='button';measure.className='ghost';measure.textContent='Medir';measure.title='Medir en la foto con una referencia de tamaño';
+  measure.onclick=()=>openPhotoMeasure(a.dataUrl,text=>{prompt.value=(prompt.value.trim()?prompt.value.trim()+' ':'')+text;autosize();prompt.focus();});
+  const remove=document.createElement('button');remove.type='button';remove.className='ghost';remove.textContent='Quitar';remove.setAttribute('aria-label','Quitar '+a.name);
+  remove.onclick=()=>{S.attachments=S.attachments.filter(x=>x!==a);showAttachments();prompt.focus();};
+  chip.append(img,name,measure,remove);host.append(chip);
+ }
+ if(list.length>1){const count=document.createElement('small');count.className='attach-count';count.textContent=list.length+' imágenes · Alfred las mira todas juntas';host.append(count);}
+ host.hidden=false;
+}
+// Suma imágenes al pedido; las que no sirven se avisan sin perder las demás.
+async function addImages(files){
+ const problems=[];let added=0;
+ for(const file of files){
+  if(S.attachments.length>=maxAttachments){problems.push('Podés adjuntar hasta '+maxAttachments+' imágenes por pedido.');break;}
+  try{
+   if(!['image/png','image/jpeg'].includes(file.type)||file.size>10e6)throw Error(file.name+': elegí una imagen PNG o JPG de hasta 10 MB.');
+   const dataUrl=await imageDataUrl(file);if(dataUrl.length>850000)throw Error(file.name+' es demasiado compleja. Probá con una más chica.');
+   const name=file.name||'imagen-'+(S.attachments.length+1)+'.png';
+   S.attachments=[...S.attachments,{file,name,dataUrl,preview:dataUrl}];added++;
+  }catch(e){problems.push(e.message);}
+ }
+ if(added)showAttachments();
+ if(problems.length)toast(problems.join(' '));
+ prompt.focus();
 }
 async function imageDataUrl(file,max=768){
  const bitmap=await createImageBitmap(file);
  try{const scale=Math.min(max/bitmap.width,max/bitmap.height,1),c=document.createElement('canvas');c.width=Math.max(1,Math.round(bitmap.width*scale));c.height=Math.max(1,Math.round(bitmap.height*scale));const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);ctx.drawImage(bitmap,0,0,c.width,c.height);return c.toDataURL('image/jpeg',.82);}finally{bitmap.close();}
 }
 $('imageFile').onchange=async()=>{
- const file=$('imageFile').files[0];$('imageFile').value='';if(!file)return;
+ const files=[...$('imageFile').files];$('imageFile').value='';if(!files.length)return;
  try{
-  if(!['image/png','image/jpeg'].includes(file.type)||file.size>10e6)throw Error('Elegí una imagen PNG o JPG de hasta 10 MB.');
-  if(S.imageTarget==='logo'){const r=await readKeychainLogo(file,file.name);update({keychain:r.config},{rerender:true});toast('Logo actualizado.');return;}
-  const dataUrl=await imageDataUrl(file);if(dataUrl.length>850000)throw Error('La imagen es demasiado compleja. Probá con una más chica.');
-  S.attachment={file,name:file.name,dataUrl,preview:dataUrl};showAttachment();prompt.focus();
+  if(S.imageTarget==='logo'){
+   const file=files[0];if(!['image/png','image/jpeg'].includes(file.type)||file.size>10e6)throw Error('Elegí una imagen PNG o JPG de hasta 10 MB.');
+   const r=await readKeychainLogo(file,file.name);update({keychain:r.config},{rerender:true});toast('Logo actualizado.');return;
+  }
+  await addImages(files);
  }catch(e){toast(e.message);}finally{S.imageTarget='attach';}
 };
+// Pegar (Ctrl+V) o arrastrar fotos sobre la caja de texto también las adjunta.
+const imageFiles=list=>[...(list||[])].filter(f=>f.kind?f.kind==='file'&&/^image\//.test(f.type):/^image\//.test(f.type)).map(f=>f.getAsFile?f.getAsFile():f).filter(Boolean);
+prompt.addEventListener('paste',e=>{const files=imageFiles(e.clipboardData?.items);if(!files.length)return;e.preventDefault();addImages(files);});
+const composer=$('composer');
+composer.addEventListener('dragover',e=>{if(![...(e.dataTransfer?.types||[])].includes('Files'))return;e.preventDefault();composer.classList.add('dropping');});
+composer.addEventListener('dragleave',e=>{if(!composer.contains(e.relatedTarget))composer.classList.remove('dropping');});
+composer.addEventListener('drop',e=>{composer.classList.remove('dropping');const files=imageFiles(e.dataTransfer?.files);if(!files.length)return;e.preventDefault();addImages(files);});
 
 // ---------- Proyectos: nuevo, importar, abrir, guardar ----------
 function resetProject(next=emptyParams()){
  S.epoch++;S.controller?.abort();S.busy=false;S.params=next;S.history=[];S.future=[];S.conversation=[];S.projectId=null;S.relief=null;S.pendingIntent=null;S.keychainDraft=null;S.dirty=false;
- clearAttachment();setBusy(false);renderConversation();viewer.setView('perspective');
+ clearAttachments();setBusy(false);renderConversation();viewer.setView('perspective');
  for(const b of ['viewPerspective','viewFront','viewBack'])pressed(b,b==='viewPerspective');
 }
 $('newProject').onclick=()=>{if(S.dirty&&hasPiece()&&!confirm('¿Empezar una pieza nueva? Los cambios sin guardar de esta se pierden.'))return;resetProject();refresh();prompt.focus();};
