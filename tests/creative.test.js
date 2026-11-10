@@ -136,7 +136,7 @@ test('litofanía plana y esférica: zonas oscuras más gruesas, claras finas, es
  const flatParams=generatedParams(defaults,flatMesh,flatSpec);
  assert.equal(flatParams.baseColor,'#f7f4ec');
 
- const sphereSpec=validateGeneration({mode:'lithophane_sphere',subject:'Bola de Navidad en litofanía',width:80,height:60,baseThickness:1,depth:2.2,hole:8});
+ const sphereSpec=validateGeneration({mode:'lithophane_sphere',subject:'Bola de Navidad esférica en litofanía con retrato de pareja sonriendo, aro superior integrado para colgar en el árbol y abertura inferior circular para luz LED',width:80,height:60,baseThickness:1,depth:2.2,hole:8});
  assert.equal(sphereSpec.width,80);assert.equal(sphereSpec.height,80);assert.equal(sphereSpec.hole,8);
  const sphereMesh=reliefMesh(p,n,n,sphereSpec);edgesClosed(sphereMesh);
  const sphereParams=generatedParams(defaults,sphereMesh,sphereSpec);
