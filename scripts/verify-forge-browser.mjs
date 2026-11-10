@@ -100,7 +100,10 @@ try{
  assistantReply=reply({route:'relief',message:'Te armo la bola de Navidad de 80 mm en litofanía.',generation:{mode:'lithophane_sphere',subject:'Retrato navideño',width:80,height:80,baseThickness:1,depth:2.2,hole:8}});
  await send('Una luz chiquita navideña. La bola de 80mm');
  assert.ok(assistantBodies.at(-1).imageDataUrls?.[0]?.startsWith('data:image/'),'La foto adjunta se conserva tras una pregunta de aclaración');
- assert.match(await dims(),/^80(?:[.,]\d)? × 80(?:[.,]\d)? × 9\d/);
+ // La foto se graba hundiendo la cara exterior hasta depth (las zonas claras quedan más finas), así que la bola puede
+ // medir algo menos de 80 mm del lado de la foto: misma tolerancia que la prueba de la esfera en tests/creative.test.js.
+ {const [w,d,h]=(await dims()).match(/[\d.,]+/g).slice(0,3).map(v=>Number(v.replace(',','.')));
+  assert.ok(Math.abs(w-80)<2.5&&Math.abs(d-80)<3.5&&h>88&&h<98,'Bola de 80 mm con aro: '+[w,d,h].join(' × '));}
  assert.ok(await page.locator('h3',{hasText:'Tamaño de la litofanía'}).count());
  await page.screenshot({path:'artifacts/forge/litofania-esferica.png'});
 
