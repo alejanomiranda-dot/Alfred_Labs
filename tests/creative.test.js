@@ -8,6 +8,7 @@ import {generateVisual} from '../server/visual-generation.js';
 import {designService} from '../server/design-service.js';
 import {checkProposal,pendingContext} from '../src/proposals.js';
 import {stlBytes,threeMfBytes} from '../src/export.js';
+import {countParts,reviewPrint} from '../src/printability.js';
 const api=await Module();api.setup();
 const spec={mode:'relief',subject:'Luna de prueba',width:80,height:60,baseThickness:2,depth:3};
 
@@ -121,3 +122,33 @@ test('la generación visual combina varias referencias en una sola edición',asy
  const r=await generateVisual({spec,imageDataUrls:['data:image/png;base64,aGVsbG8=','data:image/jpeg;base64,b3Rybw==']},'test-key',fetcher);
  assert.match(sent.url,/images\/edits$/);assert.equal(sent.body.getAll('image[]').length,2);assert.ok(!sent.body.has('image'));assert.equal(r.interpretation,false);
 });
+test('litofanía plana y esférica: zonas oscuras más gruesas, claras finas, esfera hueca con aro y entrada LED cerrada',()=>{
+ const n=32,p=new Uint8ClampedArray(n*n*4);
+ for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+  const v=x<n/2?20:240,i=(y*n+x)*4;
+  p[i]=p[i+1]=p[i+2]=v;p[i+3]=255;
+ }
+ const flatSpec=validateGeneration({mode:'lithophane',subject:'Retrato en litofanía',width:70,height:90,baseThickness:.8,depth:2.2,palette:['#ffffff','#000000'],redraw:true});
+ assert.equal(flatSpec.baseThickness,.8);assert.equal(flatSpec.redraw,false);assert.deepEqual(flatSpec.palette,[]);
+ const flatMesh=reliefMesh(p,n,n,flatSpec);edgesClosed(flatMesh);
+ const zAt=(mesh,x,r)=>mesh.vertices[((n-1-r)*n+x)*3+2];
+ assert.ok(zAt(flatMesh,6,16)>zAt(flatMesh,25,16)+1.2,'en litofanía lo oscuro debe ser más grueso que lo claro');
+ const flatParams=generatedParams(defaults,flatMesh,flatSpec);
+ assert.equal(flatParams.baseColor,'#f7f4ec');
+
+ const sphereSpec=validateGeneration({mode:'lithophane_sphere',subject:'Bola de Navidad en litofanía',width:80,height:60,baseThickness:1,depth:2.2,hole:8});
+ assert.equal(sphereSpec.width,80);assert.equal(sphereSpec.height,80);assert.equal(sphereSpec.hole,8);
+ const sphereMesh=reliefMesh(p,n,n,sphereSpec);edgesClosed(sphereMesh);
+ const sphereParams=generatedParams(defaults,sphereMesh,sphereSpec);
+ assert.equal(sphereParams.baseColor,'#f7f4ec');
+ assert.equal(sphereParams.freeDesign.nodes.at(-1).type,'union');
+ const model=buildModel(api,sphereParams);
+ edgesClosed(model.combined);
+ assert.equal(countParts(model.combined),1);
+ assert.ok(Math.abs(model.dimensions[0]-80)<2.5);
+ assert.ok(Math.abs(model.dimensions[1]-80)<3.5);
+ assert.ok(model.dimensions[2]>88&&model.dimensions[2]<98,'altura total con aro integrado: '+model.dimensions[2]);
+ const report=reviewPrint(model.combined,model.params);
+ assert.ok(!report.issues.some(i=>i.id==='parts'||i.id==='thin'||i.id==='bed'),'sin partes sueltas, paredes finas ni falta de apoyo: '+JSON.stringify(report.issues));
+});
+

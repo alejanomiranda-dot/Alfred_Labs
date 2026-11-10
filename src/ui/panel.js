@@ -86,18 +86,19 @@ function keychainControls(p,ctx){
 }
 
 function reliefControls(p,ctx){
- const spec={...p.sourceInfo};
- if(!ctx.canRebuildRelief)return [group('Relieve',el('p',{className:'note',textContent:'Relieve de '+fmt(spec.width)+' × '+fmt(spec.height)+' mm. Para cambiar el tamaño o el dibujo, pedíselo a Alfred en el chat.'}))];
- const commit=(key)=>(v,o)=>{if(o?.live)return;spec[key]=v;ctx.rebuildRelief({...spec});};
+ const spec={...p.sourceInfo},sphere=spec.mode==='lithophane_sphere',litho=sphere||spec.mode==='lithophane';
+ if(!ctx.canRebuildRelief)return [group(litho?'Litofanía':'Relieve',el('p',{className:'note',textContent:(sphere?'Litofanía esférica de '+fmt(spec.width)+' mm de diámetro.':(litho?'Litofanía':'Relieve')+' de '+fmt(spec.width)+' × '+fmt(spec.height)+' mm.')+' Para cambiar el tamaño o el dibujo, pedíselo a Alfred en el chat.'}))];
+ const commit=(key)=>(v,o)=>{if(o?.live)return;spec[key]=v;if(sphere&&key==='width')spec.height=v;ctx.rebuildRelief({...spec});};
  const invert=el('input',{type:'checkbox',checked:ctx.reliefInverted});invert.onchange=()=>ctx.rebuildRelief({...spec},invert.checked);
  const colored=spec.palette?.length>0;
  const colors=colored?[group('Colores',colorControl((ctx.model?.parts||[]).map((part,i)=>({label:i?'Color '+(i+1):'Placa',value:part.color,readOnly:true}))),el('p',{className:'note',textContent:'Cada color es una parte del 3MF: en Bambu Studio asignale un filamento a cada una. Para cambiar un color, pedíselo a Alfred.'}))]:[];
- return [...colors,group('Tamaño del relieve',
-  numberControl({label:'Ancho',value:spec.width,min:10,max:250,onCommit:commit('width')}),
-  numberControl({label:'Alto',value:spec.height,min:10,max:250,onCommit:commit('height')}),
-  numberControl({label:'Base',value:spec.baseThickness,min:1.2,max:8,step:.2,onCommit:commit('baseThickness')}),
-  numberControl({label:'Profundidad del dibujo',value:spec.depth,min:.4,max:15,step:.2,onCommit:commit('depth')}),
-  colored?null:el('label',{className:'control'},invert,' Elevar las zonas oscuras'),
+ return [...colors,group(litho?'Tamaño de la litofanía':'Tamaño del relieve',
+  numberControl({label:sphere?'Diámetro':'Ancho',value:spec.width,min:sphere?40:10,max:250,onCommit:commit('width')}),
+  sphere?null:numberControl({label:'Alto',value:spec.height,min:10,max:250,onCommit:commit('height')}),
+  numberControl({label:litho?'Pared mínima (luces)':'Base',value:spec.baseThickness,min:litho?.8:1.2,max:8,step:.2,onCommit:commit('baseThickness')}),
+  numberControl({label:litho?'Espesor de sombras':'Profundidad del dibujo',value:spec.depth,min:.4,max:15,step:.2,onCommit:commit('depth')}),
+  sphere?numberControl({label:'Entrada inferior (LED)',value:spec.hole||8,min:4,max:Math.min(60,Math.floor(spec.width*.45)),step:1,onCommit:commit('hole')}):null,
+  colored?null:el('label',{className:'control'},invert,litho?' Invertir luces y sombras':' Elevar las zonas oscuras'),
   el('p',{className:'note',textContent:'Cambiar estas medidas no vuelve a generar la imagen.'})
  )];
 }

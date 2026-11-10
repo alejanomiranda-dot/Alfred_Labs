@@ -88,11 +88,87 @@ export function colorLayers(labels,columns,rows,spec){
  }
  return {layers,missing:warnings};
 }
+// Litofanía: las zonas oscuras de la foto se vuelven más gruesas (dejan pasar menos luz) y las claras más finas,
+// conservando los tonos continuos de la fotografía sin convertirla en una meseta plana.
+export function lithophaneHeights(rgba,columns,rows,{invert=false}={}){
+ const lum=new Float32Array(columns*rows),alpha=new Float32Array(columns*rows),samples=[];
+ for(let p=0;p<lum.length;p++){
+  const i=p*4;alpha[p]=rgba[i+3]/255;
+  lum[p]=(.2126*rgba[i]+.7152*rgba[i+1]+.0722*rgba[i+2])/255;
+  if(alpha[p]>=.5)samples.push(lum[p]);
+ }
+ samples.sort((a,b)=>a-b);
+ const lo=samples.length?samples[Math.floor(samples.length*.02)]:0;
+ const hi=samples.length?samples[Math.floor(samples.length*.98)]:1;
+ const span=Math.max(.08,hi-lo),raw=new Float32Array(lum.length);
+ for(let p=0;p<lum.length;p++){
+  if(alpha[p]<.5){raw[p]=0;continue;}
+  const norm=Math.max(0,Math.min(1,(lum[p]-lo)/span));
+  raw[p]=Math.pow(invert?norm:1-norm,.9);
+ }
+ const fine=boxBlur(raw,columns,rows,1),soft=boxBlur(raw,columns,rows,2),out=new Float32Array(lum.length);
+ for(let p=0;p<lum.length;p++)out[p]=alpha[p]<.5?0:Math.max(0,Math.min(1,.72*fine[p]+.28*soft[p]));
+ return out;
+}
+// Esfera hueca en litofanía (bola de Navidad / adorno luminoso): malla cerrada de polo exterior a polo interior,
+// con apoyo plano en z=0 y abertura circular inferior (spec.hole) hacia la cavidad interna lisa.
+function sphericalLithophaneMesh(rgba,columns,rows,spec,{invert=false}={}){
+ const heights=lithophaneHeights(rgba,columns,rows,{invert});
+ let x0=columns,x1=-1,y0=rows,y1=-1;
+ for(let y=0;y<rows;y++)for(let x=0;x<columns;x++)if(rgba[(y*columns+x)*4+3]>=128){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+ if(x1<=x0||y1<=y0){x0=0;x1=columns-1;y0=0;y1=rows-1;}
+ const pw=Math.max(1,x1-x0),ph=Math.max(1,y1-y0),aspect=Math.max(.5,Math.min(2.2,pw/ph));
+ const sample=(u,v)=>{
+  const fx=x0+Math.max(0,Math.min(1,u))*pw,fy=y0+(1-Math.max(0,Math.min(1,v)))*ph;
+  const ix=Math.min(columns-2,Math.max(0,Math.floor(fx))),iy=Math.min(rows-2,Math.max(0,Math.floor(fy))),tx=fx-ix,ty=fy-iy;
+  const a=heights[iy*columns+ix],b=heights[iy*columns+ix+1],c=heights[(iy+1)*columns+ix],d=heights[(iy+1)*columns+ix+1];
+  return (a*(1-tx)+b*tx)*(1-ty)+(c*(1-tx)+d*tx)*ty;
+ };
+ const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
+ const R=spec.width/2,tMin=Math.min(spec.baseThickness,R*.2),depth=Math.min(spec.depth,R*.25);
+ const rHole=Math.min(Math.max(2,(spec.hole||8)/2),R*.42),rFlat=Math.max(rHole+4.5,Math.min(R*.38,R-tMin-depth-2));
+ const zc=Math.sqrt(Math.max(1,R*R-rFlat*rFlat)),phiBot=-Math.acos(Math.min(.98,rFlat/R)),zTop=zc+R;
+ const S=R-tMin-depth,delta=Math.max(.6,(1.6+S-zc)/2),zcIn=zc+delta,rIn=Math.max(rHole+1.5,S-delta);
+ const phiInStart=-Math.acos(Math.min(.98,rHole/rIn)),zThroat=Math.max(1.2,zcIn+rIn*Math.sin(phiInStart));
+ const phiWinMin=Math.max(phiBot+.18,-.92),phiWinMax=.96,halfTheta=Math.min(1.95,Math.max(.85,(phiWinMax-phiWinMin)/2*aspect));
+ const M=Math.max(48,Math.min(200,Math.round(Math.max(columns,rows)*.85)));
+ const nOut=Math.max(32,Math.min(124,Math.round(Math.max(columns,rows)*.5))),nIn=24;
+ const vertices=[0,0,zTop],triangles=[];
+ // Anillos exteriores desde cerca del polo norte (k=1) hasta el borde de apoyo en z=0 (k=nOut).
+ for(let k=1;k<=nOut;k++){
+  const t=k/nOut,phi=Math.PI/2-t*(Math.PI/2-phiBot),cp=Math.cos(phi),sp=Math.sin(phi);
+  const v=(phi-phiWinMin)/(phiWinMax-phiWinMin),by=k===nOut?0:smooth(0,.07,v)*smooth(0,.07,1-v);
+  for(let j=0;j<M;j++){
+   const th=-Math.PI+2*Math.PI*j/M,dth=Math.atan2(Math.sin(th+Math.PI/2),Math.cos(th+Math.PI/2));
+   const u=dth/(2*halfTheta)+.5,bx=by>0?smooth(0,.07,u)*smooth(0,.07,1-u):0,blend=bx*by;
+   const r=blend>0?R-blend*(1-sample(u,v))*depth:R;
+   if(k===nOut)vertices.push(rFlat*Math.cos(th),rFlat*Math.sin(th),0);
+   else vertices.push(r*cp*Math.cos(th),r*cp*Math.sin(th),Math.max(.05,zc+r*sp));
+  }
+ }
+ // Anillo interior en la cama (z=0, radio rHole) y garganta hacia la cavidad esférica interna.
+ for(const z of [0,zThroat])for(let j=0;j<M;j++){const th=-Math.PI+2*Math.PI*j/M;vertices.push(rHole*Math.cos(th),rHole*Math.sin(th),z);}
+ for(let m=1;m<nIn;m++){
+  const phi=phiInStart+(m/nIn)*(Math.PI/2-phiInStart),rho=rIn*Math.cos(phi),z=zcIn+rIn*Math.sin(phi);
+  for(let j=0;j<M;j++){const th=-Math.PI+2*Math.PI*j/M;vertices.push(rho*Math.cos(th),rho*Math.sin(th),z);}
+ }
+ const poleIn=vertices.length/3;vertices.push(0,0,zcIn+rIn);
+ const rings=nOut+1+nIn;
+ for(let j=0;j<M;j++){const j1=(j+1)%M;triangles.push(0,1+j,1+j1);}
+ for(let r=0;r<rings-1;r++){
+  const a0=1+r*M,b0=a0+M;
+  for(let j=0;j<M;j++){const j1=(j+1)%M;triangles.push(a0+j,b0+j,b0+j1,a0+j,b0+j1,a0+j1);}
+ }
+ const last=1+(rings-1)*M;
+ for(let j=0;j<M;j++){const j1=(j+1)%M;triangles.push(last+j,poleIn,last+j1);}
+ return {name:spec.subject.slice(0,100)+' · litofanía esférica',vertices,triangles};
+}
 export function reliefMesh(rgba,columns,rows,raw,{invert=false}={}){
  const spec=validateGeneration(raw);
  if(!Number.isInteger(columns)||!Number.isInteger(rows)||columns<2||rows<2||columns>384||rows>384||rgba.length!==columns*rows*4)throw Error('Imagen de relieve inválida.');
+ if(spec.mode==='lithophane_sphere')return sphericalLithophaneMesh(rgba,columns,rows,spec,{invert});
  const labels=spec.palette.length?paletteLabels(rgba,columns,rows,spec.palette):null;
- const vertices=[],triangles=[],heights=heightField(rgba,columns,rows,{invert,labels});
+ const vertices=[],triangles=[],heights=spec.mode==='lithophane'?lithophaneHeights(rgba,columns,rows,{invert}):heightField(rgba,columns,rows,{invert,labels});
  for(let y=0;y<rows;y++)for(let x=0;x<columns;x++){
   const light=heights[(rows-1-y)*columns+x];
   vertices.push((x/(columns-1)-.5)*spec.width,(y/(rows-1)-.5)*spec.height,spec.baseThickness+light*spec.depth);
@@ -102,7 +178,7 @@ export function reliefMesh(rgba,columns,rows,raw,{invert=false}={}){
  const bottom=edge.map(top=>{const index=vertices.length/3;vertices.push(vertices[top*3],vertices[top*3+1],0);return index;});
  const center=vertices.length/3;vertices.push(0,0,0);
  edge.forEach((top,i)=>{const next=(i+1)%edge.length;triangles.push(top,bottom[i],bottom[next],top,bottom[next],edge[next],center,bottom[next],bottom[i]);});
- const mesh={name:spec.subject.slice(0,100)+' · relieve',vertices,triangles};
+ const mesh={name:spec.subject.slice(0,100)+(spec.mode==='lithophane'?' · litofanía':' · relieve'),vertices,triangles};
  if(!labels)return mesh;
  const {layers,missing}=colorLayers(labels,columns,rows,spec);
  if(!layers.length)throw Error('No encontré en la imagen los colores pedidos. Probá con otros colores o una imagen más nítida.');
@@ -126,8 +202,21 @@ export async function reliefFromImage(imageDataUrl,spec,{invert=false}={}){
  return reliefMesh(pixels.data,columns,rows,spec,{invert});
 }
 
+const cadNode=o=>({type:'imported',face:'top',offset:[0,0],color:'',font:'',icon:'',size:[1,1,1],wallThickness:2,floorThickness:0,radius:1,radiusTop:1,height:1,points:[],text:'',fontSize:5,inputs:[],position:[0,0,0],rotation:[0,0,0],...o});
 export function generatedParams(base,mesh,spec){
- const {colors=null,missing,...stored}=mesh;
- // En colores, la placa toma el primer color de la paleta y cada zona del motivo es una parte aparte.
- return {...base,kind:'free',project:spec.subject.slice(0,60),importedMesh:stored,importedColors:colors,...(colors?{baseColor:spec.palette[0]}:{}),freeDesign:{version:1,nodes:[{type:'imported',position:[0,0,0],rotation:[0,0,0]}]},printRotation:[0,0,0],sourceInfo:{...spec},forge:null};
+ const {colors=null,missing,...stored}=mesh,litho=spec.mode==='lithophane'||spec.mode==='lithophane_sphere';
+ let nodes=[{type:'imported',position:[0,0,0],rotation:[0,0,0]}];
+ if(spec.mode==='lithophane_sphere'){
+  const R=spec.width/2,zTop=stored.vertices[2]||spec.width*.96;
+  const rCollar=Math.round(Math.max(3,R*.11)*100)/100,hCollar=Math.round(Math.max(4,R*.12)*100)/100;
+  const rTube=Math.round(Math.max(1.8,R*.055)*100)/100,rLoop=Math.round(Math.max(rTube+2.2,R*.14)*100)/100;
+  nodes=[
+   cadNode({type:'imported'}),
+   cadNode({type:'cylinder',radius:rCollar,radiusTop:rCollar,height:hCollar,position:[0,0,Math.round((zTop-hCollar*.35)*100)/100]}),
+   cadNode({type:'torus',radius:rLoop,radiusTop:rTube,rotation:[90,0,0],position:[0,0,Math.round((zTop+rLoop+.4)*100)/100]}),
+   cadNode({type:'union',inputs:[0,1,2]})
+  ];
+ }
+ // En colores, la placa toma el primer color de la paleta; en litofanías, PLA blanco natural translúcido.
+ return {...base,kind:'free',project:spec.subject.slice(0,60),importedMesh:stored,importedColors:colors,...(colors?{baseColor:spec.palette[0]}:litho?{baseColor:'#f7f4ec'}:{}),freeDesign:{version:1,nodes},printRotation:[0,0,0],sourceInfo:{...spec},forge:null};
 }

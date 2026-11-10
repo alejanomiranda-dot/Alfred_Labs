@@ -93,6 +93,17 @@ try{
  const restored=JSON.parse(await fs.readFile('artifacts/forge/relieve.json','utf8'));assert.equal(restored.sourceInfo.subject,'Luna de prueba');assert.equal(restored.forge,null);
  await page.locator('#printDialog [data-close]').click();
 
+ // 8b. Litofanía esférica: si Alfred hace una pregunta primero, la foto adjunta se conserva para el turno siguiente y arma la esfera con aro y hueco LED.
+ await page.locator('#imageFile').setInputFiles({name:'retrato.png',mimeType:'image/png',buffer:Buffer.from(moon,'base64')});
+ assistantReply=reply({route:'chat',message:'¿Preferís 70 u 80 mm?'});
+ await send('Quiero una bola de Navidad en litofanía con esta foto');
+ assistantReply=reply({route:'relief',message:'Te armo la bola de Navidad de 80 mm en litofanía.',generation:{mode:'lithophane_sphere',subject:'Retrato navideño',width:80,height:80,baseThickness:1,depth:2.2,hole:8}});
+ await send('Una luz chiquita navideña. La bola de 80mm');
+ assert.ok(assistantBodies.at(-1).imageDataUrls?.[0]?.startsWith('data:image/'),'La foto adjunta se conserva tras una pregunta de aclaración');
+ assert.match(await dims(),/^80(?:[.,]\d)? × 80(?:[.,]\d)? × 9\d/);
+ assert.ok(await page.locator('h3',{hasText:'Tamaño de la litofanía'}).count());
+ await page.screenshot({path:'artifacts/forge/litofania-esferica.png'});
+
  // 9. Llavero logo + QR: directo en el navegador, sin pedir nada a la IA.
  page.once('dialog',d=>d.accept());await page.locator('#newProject').click();await page.waitForFunction(()=>document.body.dataset.mode==='empty');
  const calls=assistantBodies.length;assistantReply=null;

@@ -35,7 +35,7 @@ const sizeText=v=>v.map(x=>String(Math.round(x*10)/10).replace('.',',')).join(' 
 const tick=()=>new Promise(r=>setTimeout(r,30));
 class Stale extends Error{}
 
-const S={api:null,params:emptyParams(),model:null,history:[],future:[],lastPush:0,conversation:[],attachments:[],busy:false,busyText:'',controller:null,
+const S={api:null,params:emptyParams(),model:null,history:[],future:[],lastPush:0,conversation:[],attachments:[],pendingAttachments:[],busy:false,busyText:'',controller:null,
  review:null,heatOn:false,settings:loadSettings(),projectId:null,relief:null,pendingIntent:null,keychainDraft:null,forgeStatus:undefined,epoch:0,dirty:false,assistantReady:location.hostname==='127.0.0.1',imageTarget:'attach'};
 
 const hasPiece=()=>!(S.params.kind==='free'&&!S.params.freeDesign);
@@ -75,7 +75,7 @@ function refresh({keepView=false,panel=true,built=null}={}){
  else if(hasPiece()){try{S.model=build(S.params);S.params=S.model.params;}catch(e){toast(e.message);}}
  viewer.draw(S.model,S.model?partsOf(S.model,S.params):[],{keepView,smooth:!!S.params.sourceInfo||(S.params.kind==='free'&&hasFinish(finishOf(S.params.freeDesign)))});
  $('dimensions').textContent=S.model?sizeText(S.model.dimensions):'';
- const flat=S.params.kind!=='free'||!!S.params.sourceInfo;$('viewFront').textContent=flat?'Frente':'Arriba';$('viewBack').textContent=flat?'Dorso':'Abajo';
+ const flat=S.params.kind!=='free'||(!!S.params.sourceInfo&&S.params.sourceInfo.mode!=='lithophane_sphere');$('viewFront').textContent=flat?'Frente':'Arriba';$('viewBack').textContent=flat?'Dorso':'Abajo';
  $('project').value=S.params.project||'';$('project').size=Math.max(8,Math.min(36,($('project').value.length||8)+1));
  updateMode();updateHistoryButtons();updateSaved();
  if(panel)renderPiecePanel();
@@ -88,6 +88,7 @@ function updateSaved(){$('savedState').textContent=!hasPiece()?'':S.dirty?'Sin g
 
 // Cambio de la conversación: se aplica directo y queda una línea con Deshacer.
 function apply(candidate,built,note){
+ S.pendingAttachments=[];
  const before=S.params;pushHistory();markDirty();
  const changes=note||summarize(before,built.params);
  refresh({built});
@@ -254,10 +255,12 @@ async function keychainFlow(prompt,attachments,epoch){
 const imagesBody=attachments=>attachments.length?{imageDataUrls:attachments.map(a=>a.dataUrl),imageNames:attachments.map(a=>a.name)}:{};
 async function assistantFlow(prompt,attachments,epoch){
  if(!S.assistantReady){addMessage('assistant','El asistente con IA no está disponible en este servidor. Podés abrir un proyecto, importar un STL o armar un llavero con logo y QR.');return;}
+ if(attachments.length)S.pendingAttachments=attachments;
+ const activeAttachments=attachments.length?attachments:S.pendingAttachments;
  const base=S.params,params=Object.fromEntries(assistantFields.filter(k=>k in base).map(k=>[k,base[k]]));
  const currentEngine=!hasPiece()?'none':base.forge?(isSculpt(base.forge)?'sculpt':'forge'):base.sourceInfo?'relief':base.kind==='keychain'?'keychain':base.kind==='free'?'cad':'template';
  const body={prompt,currentEngine,style:S.settings,params,history:recentHistory().slice(0,-1),
-  ...imagesBody(attachments),
+  ...imagesBody(activeAttachments),
   ...(base.sourceInfo?{pendingGeneration:base.sourceInfo}:{}),
   ...(base.importedMesh&&!base.sourceInfo?{importedSummary:{name:base.project,size:sizeOf(S.model||build(base)),...describeImport(S.api,base.importedMesh)}}:{})};
  let result,checked=null,correction;
@@ -265,11 +268,11 @@ async function assistantFlow(prompt,attachments,epoch){
   if(attempt>1)setBusy(true,'Revisando la pieza y corrigiendo medidas…');
   result=await post('/api/assistant',{...body,...(correction?{correction}:{})});check(epoch);
   if(S.params!==base)throw Error('Cambiaste la pieza mientras pensaba. Volvé a enviar el pedido para incluir esos cambios.');
-  if(result.route==='relief')return reliefFlow(result,attachments,epoch);
+  if(result.route==='relief')return reliefFlow(result,activeAttachments,epoch);
   if(result.route==='forge'){addMessage('assistant',result.message);return forgeFlow('generate',result.forgePrompt,epoch,undefined,result.expectedSize,{title:prompt});}
-  if(result.route==='sculpt'){addMessage('assistant',result.message);return sculptFlow('generate',result.forgePrompt,epoch,{expected:result.expectedSize,attachments,title:prompt});}
-  if(result.route==='keychain'&&base.kind==='keychain'&&!attachments.length&&!isTwoSidedKeychain(prompt))return keychainEdit(result);
-  if(result.route==='keychain'){const url=result.params?.qrText&&result.params.qrText!==defaults.qrText?findUrl(result.params.qrText):null;if(url)(S.keychainDraft||(S.keychainDraft={})).qrText=url;return keychainFlow(prompt,attachments,epoch);}
+  if(result.route==='sculpt'){addMessage('assistant',result.message);return sculptFlow('generate',result.forgePrompt,epoch,{expected:result.expectedSize,attachments:activeAttachments,title:prompt});}
+  if(result.route==='keychain'&&base.kind==='keychain'&&!activeAttachments.length&&!isTwoSidedKeychain(prompt))return keychainEdit(result);
+  if(result.route==='keychain'){const url=result.params?.qrText&&result.params.qrText!==defaults.qrText?findUrl(result.params.qrText):null;if(url)(S.keychainDraft||(S.keychainDraft={})).qrText=url;return keychainFlow(prompt,activeAttachments,epoch);}
   if(!result.canApply){addMessage('assistant',result.message);return;}
   try{checked=checkProposal(S.api,base,result);break;}catch(e){correction={error:e.message.slice(0,1500),program:result.params.freeDesign??null};}
  }
@@ -290,11 +293,13 @@ async function assistantFlow(prompt,attachments,epoch){
 // Relieve: con una imagen adjunta (logo o dibujo) se usa tal cual; si no, se genera. Cambiar medidas después no vuelve a generar.
 async function reliefFlow(result,attachments,epoch){
  const spec=validateGeneration(result.generation);addMessage('assistant',result.message);
- // direct: la imagen es la propia (logo o dibujo) y se convierte tal cual. references: las fotos o imágenes originales,
+ const isLitho=spec.mode==='lithophane'||spec.mode==='lithophane_sphere';
+ const historyImages=[...S.conversation].reverse().find(m=>m.role==='user'&&m.images?.length)?.images.map(a=>a.src)||[];
+ // direct: la imagen es la propia (logo, dibujo o foto de litofanía) y se convierte tal cual. references: las fotos o imágenes originales,
  // que se conservan para volver a dibujar con otros colores o medidas. Con varias adjuntas se dibuja combinándolas.
- let image=null,invert=false,direct=false,references=attachments.length?attachments.map(a=>a.dataUrl):S.relief?.references||[];
+ let image=null,invert=false,direct=false,references=attachments.length?attachments.map(a=>a.dataUrl):S.relief?.references?.length?S.relief.references:historyImages;
  const samePalette=S.relief&&(S.relief.spec.palette||[]).join()===spec.palette.join();
- if(attachments.length===1&&!spec.redraw){image=attachments[0].dataUrl;direct=true;}
+ if((attachments.length===1||isLitho&&references.length)&&!spec.redraw){image=(attachments[0]?.dataUrl)||references[0];direct=true;}
  // Una imagen propia se vuelve a convertir con los colores nuevos, sin redibujarla.
  else if(!attachments.length&&S.relief&&S.relief.spec.subject===spec.subject&&(samePalette||S.relief.direct)){image=S.relief.image;invert=S.relief.invert;direct=S.relief.direct;}
  else{
@@ -303,16 +308,17 @@ async function reliefFlow(result,attachments,epoch){
   setBusy(true,references.length&&spec.redraw?'Dibujando el retrato en colores a partir de '+(references.length>1?'las fotos':'la foto')+'… puede tardar hasta dos minutos.':spec.palette.length?'Dibujando el motivo en sus colores… puede tardar hasta dos minutos.':'Dibujando la imagen del relieve… puede tardar hasta dos minutos.');
   const data=await post('/api/assistant',{action:'generateVisual',spec,...(references.length?{imageDataUrls:references}:{})},200000);check(epoch);image=data.imageDataUrl;
  }
- setBusy(true,spec.palette.length?'Separando los colores en partes…':'Construyendo el relieve en 3D…');await tick();
+ setBusy(true,spec.mode==='lithophane_sphere'?'Construyendo la esfera en litofanía 3D…':spec.mode==='lithophane'?'Construyendo la litofanía en 3D…':spec.palette.length?'Separando los colores en partes…':'Construyendo el relieve en 3D…');await tick();
  const mesh=await reliefFromImage(image,spec,{invert});check(epoch);
  const candidate=validate(generatedParams(S.params,mesh,spec)),built=build(candidate);
  S.relief={image,spec,invert,direct,references};
  if(mesh.missing?.length)addMessage('assistant','No encontré en la imagen '+(mesh.missing.length===1?'el color '+mesh.missing[0]:'los colores '+mesh.missing.join(', '))+'; la pieza quedó con el resto.');
- apply(candidate,built,(spec.palette.length?'Relieve en '+spec.palette.length+' colores de ':'Relieve de ')+spec.width+' × '+spec.height+' mm');
+ const note=spec.mode==='lithophane_sphere'?'Litofanía esférica de Ø'+spec.width+' mm':spec.mode==='lithophane'?'Litofanía de '+spec.width+' × '+spec.height+' mm':(spec.palette.length?'Relieve en '+spec.palette.length+' colores de ':'Relieve de ')+spec.width+' × '+spec.height+' mm';
+ apply(candidate,built,note);
 }
 async function rebuildRelief(spec,invert=S.relief?.invert){
  if(!S.relief)return;
- try{const s=validateGeneration({...S.relief.spec,...spec,mode:'relief'}),mesh=await reliefFromImage(S.relief.image,s,{invert});const candidate=validate(generatedParams(S.params,mesh,s)),built=build(candidate);pushHistory();S.relief={...S.relief,spec:s,invert};markDirty();refresh({keepView:true,built});}
+ try{const s=validateGeneration({...S.relief.spec,...spec,mode:S.relief.spec.mode||'relief'}),mesh=await reliefFromImage(S.relief.image,s,{invert});const candidate=validate(generatedParams(S.params,mesh,s)),built=build(candidate);pushHistory();S.relief={...S.relief,spec:s,invert};markDirty();refresh({keepView:true,built});}
  catch(e){toast(e.message);}
 }
 
@@ -520,7 +526,7 @@ composer.addEventListener('drop',e=>{composer.classList.remove('dropping');const
 
 // ---------- Proyectos: nuevo, importar, abrir, guardar ----------
 function resetProject(next=emptyParams()){
- S.epoch++;S.controller?.abort();S.busy=false;S.params=next;S.history=[];S.future=[];S.conversation=[];S.projectId=null;S.relief=null;S.pendingIntent=null;S.keychainDraft=null;S.dirty=false;
+ S.epoch++;S.controller?.abort();S.busy=false;S.params=next;S.history=[];S.future=[];S.conversation=[];S.projectId=null;S.relief=null;S.pendingIntent=null;S.keychainDraft=null;S.dirty=false;S.pendingAttachments=[];
  clearAttachments();setBusy(false);renderConversation();viewer.setView('perspective');
  for(const b of ['viewPerspective','viewFront','viewBack'])pressed(b,b==='viewPerspective');
 }
