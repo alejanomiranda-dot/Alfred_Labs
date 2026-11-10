@@ -70,3 +70,30 @@ test('varias imágenes en un pedido llegan todas, numeradas y con su nombre; los
  await assert.rejects(proposeDesign({prompt:'x',imageDataUrls:a},'test-key',fail),/referencia/);
  const big='data:image/jpeg;base64,'+'A'.repeat(800000);await assert.rejects(proposeDesign({prompt:'x',imageDataUrls:[big,big,big,big,big]},'test-key',fail),/pesan demasiado/);
 });
+test('litofanía esférica navideña con foto construye directo en relief y recupera aunque venga de forge o chat',async()=>{
+ const reply=data=>async()=>({ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify({forgePrompt:'',designSource:'current',generation:null,imageReading:'',imageDifferences:'',proportionCheck:'',expectedSize:null,...data})}]}]})});
+ const imageDataUrl='data:image/png;base64,aGVsbG8=';
+ const prompt='Quiero imprimir un adorno navideño personalizado. Necesito una bola de Navidad esférica utilizando la técnica de litofanía con la fotografía que adjunto. Diámetro de 7 u 8 centímetros, aro integrado arriba y abertura circular abajo para una luz LED del árbol en PLA blanco translúcido.';
+ // Aunque el modelo intente frenar con una pregunta en chat, al tener la foto y medidas razonables construye primero.
+ let r=await proposeDesign({prompt,imageDataUrls:[imageDataUrl],params:defaults},'test-key',reply({route:'chat',message:'¿Qué diámetro tiene el LED y preferís 70 u 80 mm?',canApply:false,params:defaults}));
+ assert.equal(r.route,'relief');
+ assert.equal(r.generation.mode,'lithophane_sphere');
+ assert.equal(r.generation.width,80);
+ assert.equal(r.generation.height,80);
+ assert.equal(r.generation.hole,8);
+ assert.equal(r.generation.redraw,false);
+ assert.deepEqual(r.generation.palette,[]);
+ // Si el usuario responde en un segundo turno o reenvía la foto cuando la pieza actual quedó en forge, sale de forge y pasa a litofanía esférica.
+ r=await proposeDesign({
+  prompt:'Ahí te paso la foto',
+  imageDataUrls:[imageDataUrl],
+  currentEngine:'forge',
+  history:[{role:'user',content:prompt},{role:'assistant',content:'Pasame la foto'},{role:'user',content:'Una luz chiquita navideña. La bola de 80mm'}],
+  params:defaults
+ },'test-key',reply({route:'forge',forgePrompt:'Bola de navidad de 80 mm',message:'Uso esta foto para la litofanía.',canApply:false,params:defaults}));
+ assert.equal(r.route,'relief');
+ assert.equal(r.generation.mode,'lithophane_sphere');
+ assert.equal(r.generation.width,80);
+ assert.equal(r.generation.hole,8);
+});
+

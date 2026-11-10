@@ -1,4 +1,4 @@
-import {validateGeneration} from '../src/generation-spec.js';
+import {generationModes,validateGeneration} from '../src/generation-spec.js';
 export function validImage(value){return typeof value==='string'&&value.length<=850000&&/^data:image\/(jpeg|png);base64,[A-Za-z0-9+/]+=*$/.test(value);}
 export const maxImages=6;
 // Imágenes de un pedido: una sola (imageDataUrl) o varias (imageDataUrls), cada una validada y con un tope total.
@@ -23,7 +23,7 @@ export function imageContent(images,names){
 }
 export async function generateVisual(body,key,fetcher=fetch,{signal,model=process.env.OPENAI_IMAGE_MODEL||'gpt-image-1.5'}={}){
  const spec=validateGeneration(body.spec);
- if(spec.mode!=='relief')throw Object.assign(Error('Este pedido requiere el motor de esculturas 3D.'),{status:400});
+ if(!generationModes.includes(spec.mode))throw Object.assign(Error('Este pedido requiere el motor de esculturas 3D.'),{status:400});
  if(!key)throw Object.assign(Error('Falta configurar la generación visual en el servidor.'),{status:503});
  const images=imagesOf(body,'Adjuntá una referencia PNG o JPG válida.');
  const names=['plate/background','first motif color','second motif color','third motif color'];
