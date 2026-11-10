@@ -161,7 +161,7 @@ function sphericalLithophaneMesh(rgba,columns,rows,spec,{invert=false}={}){
  }
  const last=1+(rings-1)*M;
  for(let j=0;j<M;j++){const j1=(j+1)%M;triangles.push(last+j,poleIn,last+j1);}
- return {name:spec.subject.slice(0,100)+' · litofanía esférica',vertices,triangles};
+ return {name:(spec.subject.slice(0,95)+' · litofanía esférica').slice(0,120),vertices,triangles};
 }
 export function reliefMesh(rgba,columns,rows,raw,{invert=false}={}){
  const spec=validateGeneration(raw);
@@ -178,7 +178,7 @@ export function reliefMesh(rgba,columns,rows,raw,{invert=false}={}){
  const bottom=edge.map(top=>{const index=vertices.length/3;vertices.push(vertices[top*3],vertices[top*3+1],0);return index;});
  const center=vertices.length/3;vertices.push(0,0,0);
  edge.forEach((top,i)=>{const next=(i+1)%edge.length;triangles.push(top,bottom[i],bottom[next],top,bottom[next],edge[next],center,bottom[next],bottom[i]);});
- const mesh={name:spec.subject.slice(0,100)+(spec.mode==='lithophane'?' · litofanía':' · relieve'),vertices,triangles};
+ const mesh={name:(spec.subject.slice(0,95)+(spec.mode==='lithophane'?' · litofanía':' · relieve')).slice(0,120),vertices,triangles};
  if(!labels)return mesh;
  const {layers,missing}=colorLayers(labels,columns,rows,spec);
  if(!layers.length)throw Error('No encontré en la imagen los colores pedidos. Probá con otros colores o una imagen más nítida.');
