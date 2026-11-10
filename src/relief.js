@@ -168,24 +168,25 @@ function sphericalLithophaneMesh(rgba,columns,rows,spec,{invert=false}={}){
 }
 // Litofanía curva autoportante (arco de 60° apoyado verticalmente en z=0): se mantiene parada sola en una mesa o repisa.
 function curvedLithophaneMesh(rgba,columns,rows,spec,{invert=false}={}){
- const heights=lithophaneHeights(rgba,columns,rows,{invert});
+ const heights=lithophaneHeights(rgba,columns,rows,{invert}),sample=bilinearSampler(heights,columns,rows,{x0:0,y0:0,pw:Math.max(1,columns-1),ph:Math.max(1,rows-1)});
+ const nx=Math.max(2,Math.min(180,columns)),ny=Math.max(2,Math.min(140,rows));
  const span=Math.PI/3,rBack=spec.width/(2*Math.sin(span/2)),vertices=[],triangles=[];
- const frameThick=spec.baseThickness+spec.depth*.65,border=Math.max(2,Math.round(Math.min(columns,rows)*.03));
+ const frameThick=spec.baseThickness+spec.depth*.65,border=Math.max(1,Math.round(Math.min(nx,ny)*.03));
  // Superficie frontal tallada (mirando hacia -Y) y respaldo liso a radio constante rBack.
- for(let side=0;side<2;side++)for(let y=0;y<rows;y++)for(let x=0;x<columns;x++){
-  const u=x/(columns-1),v=y/(rows-1),th=(u-.5)*span,z=v*spec.height;
-  const isBorder=x<border||x>=columns-border||y<border||y>=rows-border;
-  const thick=side===1?0:isBorder?frameThick:spec.baseThickness+heights[(rows-1-y)*columns+x]*spec.depth;
+ for(let side=0;side<2;side++)for(let y=0;y<ny;y++)for(let x=0;x<nx;x++){
+  const u=x/(nx-1),v=y/(ny-1),th=(u-.5)*span,z=v*spec.height;
+  const isBorder=x<border||x>=nx-border||y<border||y>=ny-border;
+  const thick=side===1?0:isBorder?frameThick:spec.baseThickness+sample(u,v)*spec.depth;
   const rho=rBack+thick;
   vertices.push(rho*Math.sin(th),rBack-rho*Math.cos(th),z);
  }
- const offset=columns*rows;
- for(let y=0;y<rows-1;y++)for(let x=0;x<columns-1;x++){
-  const a=y*columns+x,b=a+1,c=a+columns,d=c+1;
+ const offset=nx*ny;
+ for(let y=0;y<ny-1;y++)for(let x=0;x<nx-1;x++){
+  const a=y*nx+x,b=a+1,c=a+nx,d=c+1;
   triangles.push(a,b,d,a,d,c);
   triangles.push(offset+a,offset+d,offset+b,offset+a,offset+c,offset+d);
  }
- const edge=[];for(let x=0;x<columns;x++)edge.push(x);for(let y=1;y<rows;y++)edge.push(y*columns+columns-1);for(let x=columns-2;x>=0;x--)edge.push((rows-1)*columns+x);for(let y=rows-2;y>0;y--)edge.push(y*columns);
+ const edge=[];for(let x=0;x<nx;x++)edge.push(x);for(let y=1;y<ny;y++)edge.push(y*nx+nx-1);for(let x=nx-2;x>=0;x--)edge.push((ny-1)*nx+x);for(let y=ny-2;y>0;y--)edge.push(y*nx);
  edge.forEach((top,i)=>{const next=edge[(i+1)%edge.length],b0=offset+top,b1=offset+next;triangles.push(top,b0,b1,top,b1,next);});
  return {name:(spec.subject.slice(0,95)+' · litofanía curva').slice(0,120),vertices,triangles};
 }
