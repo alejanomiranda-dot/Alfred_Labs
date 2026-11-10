@@ -1,4 +1,4 @@
-// Visor 3D: escena, cámara, dibujo de la pieza y herramientas de medición.
+// Visor 3D: escena, cámara, dibujo de la pieza, simulación al trasluz y herramientas de medición.
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {createViewerTools} from '../viewer-tools.js';
@@ -10,6 +10,28 @@ export function meshGeometry(m){
  g.setAttribute('position',new THREE.Float32BufferAttribute(xyz,3));g.setIndex(new THREE.BufferAttribute(m.triangles,1));g.computeVertexNormals();return g;
 }
 
+// Simulación óptica al trasluz (Ley de Beer-Lambert): las zonas más finas transmiten luz cálida brillante
+// y las zonas más gruesas atenúan la luz formando las sombras de la fotografía.
+function applyBacklightColors(g,mode,dims){
+ const pos=g.getAttribute('position'),count=pos.count,vals=new Float32Array(count),colors=new Float32Array(count*3);
+ const cx=0,cy=0,cz=(dims?.[2]||80)*.46;
+ let lo=Infinity,hi=-Infinity;
+ for(let i=0;i<count;i++){
+  const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i);
+  const v=mode==='lithophane_sphere'?Math.hypot(x-cx,y-cy,z-cz):mode==='lithophane_cylinder'?Math.hypot(x,y):mode==='lithophane_arc'?-y:z;
+  vals[i]=v;if(v<lo)lo=v;if(v>hi)hi=v;
+ }
+ const span=Math.max(.5,hi-lo);
+ for(let i=0;i<count;i++){
+  const d=Math.max(0,Math.min(1,(vals[i]-lo)/span));
+  const trans=Math.exp(-2.4*d);
+  colors[i*3]=.22+.78*trans;
+  colors[i*3+1]=.13+.82*Math.pow(trans,1.08);
+  colors[i*3+2]=.07+.76*Math.pow(trans,1.22);
+ }
+ g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+}
+
 export function createViewer(host){
  const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(34,1,.1,4000);camera.up.set(0,0,1);
  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true});
@@ -18,10 +40,11 @@ export function createViewer(host){
  const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.minDistance=2;controls.maxDistance=3000;controls.maxPolarAngle=Math.PI*.85;
  let dirty=true;const markDirty=()=>{dirty=true;};controls.addEventListener('change',markDirty);
 
- scene.add(new THREE.HemisphereLight(0xf2f7ff,0x2a3445,2.3));
+ const hemi=new THREE.HemisphereLight(0xf2f7ff,0x2a3445,2.3);scene.add(hemi);
  const key=new THREE.DirectionalLight(0xffffff,3.2);key.position.set(-40,-30,90);key.castShadow=true;key.shadow.mapSize.set(2048,2048);Object.assign(key.shadow.camera,{left:-120,right:120,top:120,bottom:-120});key.shadow.normalBias=.08;scene.add(key);
  const rim=new THREE.DirectionalLight(0xcfe6ff,1.6);rim.position.set(40,60,40);scene.add(rim);
  const under=new THREE.DirectionalLight(0xe6f0ff,1.4);under.position.set(-30,-40,-60);scene.add(under);
+ const innerLight=new THREE.PointLight(0xffcf78,0,280,1.1);scene.add(innerLight);
 
  let grid=null;
  const floor=new THREE.Mesh(new THREE.PlaneGeometry(2000,2000),new THREE.ShadowMaterial({opacity:.1}));floor.position.z=-.2;floor.receiveShadow=true;scene.add(floor);
@@ -34,7 +57,17 @@ export function createViewer(host){
 
  const group=new THREE.Group();scene.add(group);
  const tools=createViewerTools({host,scene,camera,renderer,group,markDirty,meshGeometry});
- let current=null,view='perspective';
+ let current=null,lastParts=[],lastSmooth=false,view='perspective',backlit=false;
+
+ function syncLighting(){
+  const dims=current?.dimensions||[80,80,80],mode=current?.params?.sourceInfo?.mode||'';
+  hemi.intensity=backlit?.42:2.3;
+  key.intensity=backlit?.38:3.2;
+  rim.intensity=backlit?.25:1.6;
+  under.intensity=backlit?.18:1.4;
+  innerLight.intensity=backlit?5.2:0;
+  innerLight.position.set(0,mode==='lithophane'||mode==='lithophane_arc'?18:0,(current?.totalHeight||dims[2]||80)*.46);
+ }
 
  function frame(model=current){
   const dims=model?.dimensions||[50,50,10];
@@ -53,13 +86,25 @@ export function createViewer(host){
  return {
   draw(model,parts,{keepView=false,smooth=false}={}){
    while(group.children.length){const m=group.children[0];group.remove(m);m.geometry.dispose();m.material.dispose();}
-   current=model;
-   for(const {mesh,color} of parts||[]){if(!mesh?.triangles.length)continue;const m=new THREE.Mesh(meshGeometry(mesh),new THREE.MeshStandardMaterial({color,roughness:.45,metalness:.08,flatShading:!smooth}));m.castShadow=true;m.receiveShadow=true;group.add(m);}
+   current=model;lastParts=parts||[];lastSmooth=smooth;
+   syncLighting();
+   const mode=model?.params?.sourceInfo?.mode||'';
+   for(const {mesh,color} of lastParts){
+    if(!mesh?.triangles.length)continue;
+    const g=meshGeometry(mesh);
+    if(backlit&&mode.startsWith('lithophane'))applyBacklightColors(g,mode,model?.dimensions);
+    const mat=backlit&&mode.startsWith('lithophane')
+     ?new THREE.MeshStandardMaterial({color:0xffffff,vertexColors:true,emissive:0xffb85c,emissiveIntensity:.42,roughness:.32,metalness:.02,flatShading:!smooth})
+     :new THREE.MeshStandardMaterial({color,roughness:.45,metalness:.08,flatShading:!smooth});
+    const m=new THREE.Mesh(g,mat);m.castShadow=true;m.receiveShadow=true;group.add(m);
+   }
    tools.afterDraw();if(!keepView)frame(model);markDirty();
   },
   clear(){this.draw(null,[]);},
   setView(next){view=next;frame();},
   get view(){return view;},
+  setBacklight(next){backlit=!!next;if(current)this.draw(current,lastParts,{keepView:true,smooth:lastSmooth});else{syncLighting();markDirty();}},
+  get backlit(){return backlit;},
   frame:()=>frame(),
   repaint:paintGrid,
   // Vistas para la revisión visual, sin mover la cámara de la persona.

@@ -6,7 +6,7 @@ import {checkProposal,proposalChanges} from '../proposals.js';
 import {reviewPrint,costOf,durationText,composeRotation,countParts,partsOf as meshParts,keepParts} from '../printability.js';
 import {stlBytes,threeMfBytes} from '../export.js';
 import {revisionName} from '../handoff.js';
-import {loadSettings,money} from '../settings.js';
+import {loadSettings,money,rememberFromPrompt} from '../settings.js';
 import {saveVersion,listProjects,deleteProject,countProjects,migrateLegacy,pruneProject} from '../library.js';
 import {cloudConfigured,currentUser,onAccountChange,accountName,preloadGoogle,signIn,signOut,syncLibrary,pushVersion,removeFromCloud,versionParams} from '../cloud.js';
 import {thumbnail} from '../studio-output.js';
@@ -50,6 +50,7 @@ const viewer=createViewer($('viewer'));
 setupTheme($('themeToggle'),()=>viewer.repaint());
 for(const [id,view] of [['viewPerspective','perspective'],['viewFront','front'],['viewBack','back']])$(id).onclick=()=>{viewer.setView(view);for(const b of ['viewPerspective','viewFront','viewBack'])$(b).setAttribute('aria-pressed',String(b===id));};
 const pressed=(id,on)=>$(id).setAttribute('aria-pressed',String(on));
+$('backlightTool').onclick=()=>{const on=$('backlightTool').getAttribute('aria-pressed')!=='true';pressed('backlightTool',on);viewer.setBacklight(on);if(on)toast('Simulación al trasluz activada.');};
 $('dimsTool').onclick=()=>{const on=$('dimsTool').getAttribute('aria-pressed')!=='true';pressed('dimsTool',on);viewer.tools.setDims(on);};
 $('rulerTool').onclick=()=>{const on=$('rulerTool').getAttribute('aria-pressed')!=='true';pressed('rulerTool',on);viewer.tools.setRuler(on);if(on)toast('Hacé clic en dos puntos de la pieza para medir.');};
 const section={axis:'z',amount:.5};
@@ -75,7 +76,9 @@ function refresh({keepView=false,panel=true,built=null}={}){
  else if(hasPiece()){try{S.model=build(S.params);S.params=S.model.params;}catch(e){toast(e.message);}}
  viewer.draw(S.model,S.model?partsOf(S.model,S.params):[],{keepView,smooth:!!S.params.sourceInfo||(S.params.kind==='free'&&hasFinish(finishOf(S.params.freeDesign)))});
  $('dimensions').textContent=S.model?sizeText(S.model.dimensions):'';
- const flat=S.params.kind!=='free'||(!!S.params.sourceInfo&&S.params.sourceInfo.mode!=='lithophane_sphere');$('viewFront').textContent=flat?'Frente':'Arriba';$('viewBack').textContent=flat?'Dorso':'Abajo';
+ const isLitho=!!S.params.sourceInfo?.mode?.startsWith('lithophane');
+ $('backlightTool').hidden=!isLitho;if(!isLitho&&viewer.backlit){pressed('backlightTool',false);viewer.setBacklight(false);}
+ const flat=S.params.kind!=='free'||(!!S.params.sourceInfo&&!['lithophane_sphere','lithophane_cylinder'].includes(S.params.sourceInfo.mode));$('viewFront').textContent=flat?'Frente':'Arriba';$('viewBack').textContent=flat?'Dorso':'Abajo';
  $('project').value=S.params.project||'';$('project').size=Math.max(8,Math.min(36,($('project').value.length||8)+1));
  updateMode();updateHistoryButtons();updateSaved();
  if(panel)renderPiecePanel();
@@ -146,6 +149,19 @@ function renderPieceStatus(){
 }
 
 // ---------- Conversación ----------
+// Sugerencias contextuales rápidas según el tipo de pieza activa para iterar con un toque.
+function quickSuggestionsFor(p){
+ const mode=p.sourceInfo?.mode;
+ if(mode==='lithophane_sphere')return ['Hacerla de 70 mm de diámetro','Agrandar entrada LED a 12 mm','Pasar a litofanía curva de mesa'];
+ if(mode==='lithophane_cylinder')return ['Cambiar diámetro a 90 mm','Pasar a bola de Navidad de 80 mm','Pasar a litofanía curva de mesa'];
+ if(mode==='lithophane_arc'||mode==='lithophane')return ['Pasar a litofanía curva de mesa','Pasar a bola de Navidad de 80 mm','Pasar a fanal cilíndrico 360°'];
+ if(mode==='cutter')return ['Agrandar el cortante a 90 mm','Subir el filo a 14 mm','Pasar a placa en relieve'];
+ if(mode==='relief')return ['Pasar a 4 colores para AMS','Convertir en cortante de galletitas','Agrandar a 100 × 100 mm'];
+ if(p.kind==='keychain')return ['Agrandar a 60 × 70 mm','El nombre en negro','Base de 3,6 mm de grosor'];
+ if(p.kind!=='free')return ['Hacerla circular de 40 mm','Agregar un huesito grabado atrás','Agrandar el agujero a 5 mm'];
+ if(p.forge)return ['Hacerla de 100 mm de alto','Darle acabado facetado (low-poly)','Darle textura tejida'];
+ return ['Agregarle tapa con encastre','Paredes de 3 mm de espesor','Grabar un texto en el frente'];
+}
 function addMessage(role,content,extra={}){S.conversation.push({role,content,...extra});renderConversation();updateMode();}
 function renderConversation(){
  const host=$('conversation');host.replaceChildren();
@@ -166,6 +182,13 @@ function renderConversation(){
   }
   host.append(row);
  });
+ if(!S.busy&&hasPiece()&&S.conversation.length){
+  const chips=document.createElement('div');chips.className='msg-suggestions';
+  for(const text of quickSuggestionsFor(S.params)){
+   const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=()=>send(text);chips.append(b);
+  }
+  host.append(chips);
+ }
  if(S.busy){const row=document.createElement('div');row.className='msg thinking';row.textContent=S.busyText;host.append(row);}
  host.scrollTop=host.scrollHeight;
 }
@@ -184,6 +207,7 @@ async function post(url,body,timeout=200000){
 
 async function send(text){
  const prompt=(text??$('prompt').value).trim();if(!prompt||S.busy)return;
+ rememberFromPrompt(S.settings,prompt);
  const attachments=S.attachments;$('prompt').value='';autosize();clearAttachments();
  addMessage('user',prompt,attachments.length?{images:attachments.map(a=>({src:a.preview,name:a.name}))}:{});
  const epoch=S.epoch;S.controller=new AbortController();setBusy(true);
@@ -293,13 +317,13 @@ async function assistantFlow(prompt,attachments,epoch){
 // Relieve: con una imagen adjunta (logo o dibujo) se usa tal cual; si no, se genera. Cambiar medidas después no vuelve a generar.
 async function reliefFlow(result,attachments,epoch){
  const spec=validateGeneration(result.generation);addMessage('assistant',result.message);
- const isLitho=spec.mode==='lithophane'||spec.mode==='lithophane_sphere';
+ const isLitho=spec.mode.startsWith('lithophane');
  const historyImages=[...S.conversation].reverse().find(m=>m.role==='user'&&m.images?.length)?.images.map(a=>a.src)||[];
  // direct: la imagen es la propia (logo, dibujo o foto de litofanía) y se convierte tal cual. references: las fotos o imágenes originales,
  // que se conservan para volver a dibujar con otros colores o medidas. Con varias adjuntas se dibuja combinándolas.
  let image=null,invert=false,direct=false,references=attachments.length?attachments.map(a=>a.dataUrl):S.relief?.references?.length?S.relief.references:historyImages;
  const samePalette=S.relief&&(S.relief.spec.palette||[]).join()===spec.palette.join();
- if((attachments.length===1||isLitho&&references.length)&&!spec.redraw){image=(attachments[0]?.dataUrl)||references[0];direct=true;}
+ if((attachments.length===1||(isLitho||spec.mode==='cutter')&&references.length)&&!spec.redraw){image=(attachments[0]?.dataUrl)||references[0];direct=true;}
  // Una imagen propia se vuelve a convertir con los colores nuevos, sin redibujarla.
  else if(!attachments.length&&S.relief&&S.relief.spec.subject===spec.subject&&(samePalette||S.relief.direct)){image=S.relief.image;invert=S.relief.invert;direct=S.relief.direct;}
  else{
@@ -308,17 +332,18 @@ async function reliefFlow(result,attachments,epoch){
   setBusy(true,references.length&&spec.redraw?'Dibujando el retrato en colores a partir de '+(references.length>1?'las fotos':'la foto')+'… puede tardar hasta dos minutos.':spec.palette.length?'Dibujando el motivo en sus colores… puede tardar hasta dos minutos.':'Dibujando la imagen del relieve… puede tardar hasta dos minutos.');
   const data=await post('/api/assistant',{action:'generateVisual',spec,...(references.length?{imageDataUrls:references}:{})},200000);check(epoch);image=data.imageDataUrl;
  }
- setBusy(true,spec.mode==='lithophane_sphere'?'Construyendo la esfera en litofanía 3D…':spec.mode==='lithophane'?'Construyendo la litofanía en 3D…':spec.palette.length?'Separando los colores en partes…':'Construyendo el relieve en 3D…');await tick();
- const mesh=await reliefFromImage(image,spec,{invert});check(epoch);
+ setBusy(true,spec.mode==='lithophane_sphere'?'Construyendo la esfera en litofanía 3D…':spec.mode==='lithophane_cylinder'?'Construyendo el fanal en litofanía 3D…':spec.mode==='lithophane_arc'?'Construyendo la litofanía curva 3D…':spec.mode==='lithophane'?'Construyendo la litofanía en 3D…':spec.mode==='cutter'?'Construyendo el cortante y sello en 3D…':spec.palette.length?'Separando los colores en partes…':'Construyendo el relieve en 3D…');await tick();
+ const sourceInput=isLitho&&references.length>1?references:image;
+ const mesh=await reliefFromImage(sourceInput,spec,{invert});check(epoch);
  const candidate=validate(generatedParams(S.params,mesh,spec)),built=build(candidate);
  S.relief={image,spec,invert,direct,references};
  if(mesh.missing?.length)addMessage('assistant','No encontré en la imagen '+(mesh.missing.length===1?'el color '+mesh.missing[0]:'los colores '+mesh.missing.join(', '))+'; la pieza quedó con el resto.');
- const note=spec.mode==='lithophane_sphere'?'Litofanía esférica de Ø'+spec.width+' mm':spec.mode==='lithophane'?'Litofanía de '+spec.width+' × '+spec.height+' mm':(spec.palette.length?'Relieve en '+spec.palette.length+' colores de ':'Relieve de ')+spec.width+' × '+spec.height+' mm';
+ const note=spec.mode==='lithophane_sphere'?'Litofanía esférica de Ø'+spec.width+' mm':spec.mode==='lithophane_cylinder'?'Fanal en litofanía de Ø'+spec.width+' × '+spec.height+' mm':spec.mode==='lithophane_arc'?'Litofanía curva de '+spec.width+' × '+spec.height+' mm':spec.mode==='lithophane'?'Litofanía de '+spec.width+' × '+spec.height+' mm':spec.mode==='cutter'?'Cortante y sello de '+spec.width+' × '+spec.height+' mm':(spec.palette.length?'Relieve en '+spec.palette.length+' colores de ':'Relieve de ')+spec.width+' × '+spec.height+' mm';
  apply(candidate,built,note);
 }
 async function rebuildRelief(spec,invert=S.relief?.invert){
  if(!S.relief)return;
- try{const s=validateGeneration({...S.relief.spec,...spec,mode:S.relief.spec.mode||'relief'}),mesh=await reliefFromImage(S.relief.image,s,{invert});const candidate=validate(generatedParams(S.params,mesh,s)),built=build(candidate);pushHistory();S.relief={...S.relief,spec:s,invert};markDirty();refresh({keepView:true,built});}
+ try{const s=validateGeneration({...S.relief.spec,...spec,mode:S.relief.spec.mode||'relief'}),sourceInput=s.mode.startsWith('lithophane')&&S.relief.references?.length>1?S.relief.references:S.relief.image,mesh=await reliefFromImage(sourceInput,s,{invert});const candidate=validate(generatedParams(S.params,mesh,s)),built=build(candidate);pushHistory();S.relief={...S.relief,spec:s,invert};markDirty();refresh({keepView:true,built});}
  catch(e){toast(e.message);}
 }
 
@@ -433,13 +458,19 @@ async function polishShape(prompt,epoch,regenerate){
  setBusy(true,'Mirando cómo quedó…');await tick();
  const first=await critique(prompt,epoch);
  if(!first||first.score>=8||!first.fixes)return;
+ const historyImages=[...S.conversation].reverse().find(m=>m.role==='user'&&m.images?.length)?.images.map(a=>({dataUrl:a.src,name:a.name||'foto.jpg'}))||[];
+ const imgs=S.pendingAttachments.length?S.pendingAttachments:historyImages;
+ if(imgs.length&&/\blitofan[ií]a\b|falta\s+(la\s+imagen|el\s+retrato|la\s+foto)/i.test(first.fixes+' '+(first.verdict||''))){
+  const sphere=/\b(esf[eé]ric|esfera|bola|navid)/i.test(prompt+' '+first.fixes);
+  return reliefFlow({message:'Paso tu foto a litofanía directamente sobre la pieza.',generation:{mode:sphere?'lithophane_sphere':'lithophane',subject:shortName(prompt),width:80,height:sphere?80:100,baseThickness:1,depth:2.2,hole:8,palette:[],redraw:false}},imgs,epoch);
+ }
  setBusy(true,'Puliendo la forma para que se reconozca mejor…');
  try{await regenerate(first.fixes);}
  catch(e){if(e instanceof Stale)throw e;return;}
  setBusy(true,'Comparando con la versión anterior…');await tick();
  const second=await critique(prompt,epoch);
  if(second&&second.score<first.score&&S.history.length){S.params=S.history.pop();S.future=[];refresh();addMessage('event','Volví a la primera versión: se reconocía mejor');}
- else if(second?.verdict)addMessage('assistant',second.verdict);
+ else if(second?.verdict&&second.score>=7)addMessage('assistant',second.verdict);
 }
 async function forgeVersion(id){
  const archive=S.params.forge,revision=archive?.revisions.find(r=>r.id===id);if(!revision||S.busy)return;

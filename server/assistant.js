@@ -22,6 +22,9 @@ export function routeOf(result,prompt=''){
 export function safeParams(raw){const out={};for(const key of Object.keys(fields))if(raw&&key in raw)out[key]=raw[key];return out;}
 const lithoRe=/\blitofan[ií]a\b|\blithophane\b/i;
 const sphereOrnamentRe=/\b(esf[eé]ric[oa]|esfera|bola\s+de\s+navidad|adorno\s+navide[ñn]o|arbolito|colgar\s+en\s+el\s+[aá]rbol)\b/i;
+const cylLithoRe=/\b(cil[ií]ndric[oa]|cilindro|fanal|pantalla\s+cil[ií]ndrica|velador\s+cil[ií]ndrico)\b/i;
+const arcLithoRe=/\b(curv[oa]|autoportante|con\s+pie|parada\s+sola|de\s+mesa|de\s+escritorio)\b/i;
+const cutterRe=/\b(cortante\s+de\s+galletitas?|molde\s+cortante|sello\s+para\s+(masa|galletitas?|cer[aá]mica))\b/i;
 function extractDiameterMm(text){
  const cm=text.match(/(\d+(?:[.,]\d+)?)\s*(?:u|o|a|-|–)?\s*(\d+(?:[.,]\d+)?)?\s*(?:cm|cent[ií]metros?)\b/i);
  if(cm){const a=Number(cm[1].replace(',','.')),b=cm[2]?Number(cm[2].replace(',','.')):a;return Math.round(Math.max(a,b)*10);}
@@ -34,25 +37,39 @@ function extractHoleMm(text){
 }
 function normalizeLithophane(result,body,history,images){
  const prompt=String(body.prompt||''),context=[...history.map(m=>m.content),prompt].join('\n');
- const wantsLitho=lithoRe.test(prompt)||body.pendingGeneration?.mode?.startsWith('lithophane')||(lithoRe.test(context)&&(images.length>0||/\b(\d+\s*(?:mm|cm)|luz|led|bola|esfera|foto|imagen)\b/i.test(prompt)));
+ if(cutterRe.test(prompt)&&!result.generation){
+  const prev=body.pendingGeneration||{};
+  const d=extractDiameterMm(prompt)||prev.width||80;
+  result.generation=validateGeneration({mode:'cutter',subject:(prev.subject||prompt).slice(0,240),width:d,height:d,baseThickness:2.4,depth:10,hole:0,palette:[],redraw:!images.length});
+  result.route='relief';result.canApply=false;result.forgePrompt='';result.expectedSize=null;
+  if(!result.message)result.message=`Te armo el cortante y sello de ${d} mm listo para imprimir sin soportes.`;
+  return;
+ }
+ const wantsLitho=lithoRe.test(prompt)||body.pendingGeneration?.mode?.startsWith('lithophane')||(lithoRe.test(context)&&(images.length>0||/\b(\d+\s*(?:mm|cm)|luz|led|bola|esfera|curv[oa]|cilindro|fanal|foto|imagen)\b/i.test(prompt)));
  if(!wantsLitho&&!result.generation?.mode?.startsWith('lithophane'))return;
- const wantsSphere=result.generation?.mode==='lithophane_sphere'||body.pendingGeneration?.mode==='lithophane_sphere'||sphereOrnamentRe.test(context);
- const mode=wantsSphere?'lithophane_sphere':'lithophane';
+ const wantsSphere=result.generation?.mode==='lithophane_sphere'||sphereOrnamentRe.test(prompt)||(!cylLithoRe.test(prompt)&&!arcLithoRe.test(prompt)&&(body.pendingGeneration?.mode==='lithophane_sphere'||sphereOrnamentRe.test(context)));
+ const wantsCyl=!wantsSphere&&(result.generation?.mode==='lithophane_cylinder'||cylLithoRe.test(prompt)||body.pendingGeneration?.mode==='lithophane_cylinder'||cylLithoRe.test(context));
+ const wantsArc=!wantsSphere&&!wantsCyl&&(result.generation?.mode==='lithophane_arc'||arcLithoRe.test(prompt)||body.pendingGeneration?.mode==='lithophane_arc'||arcLithoRe.test(context));
+ const mode=wantsSphere?'lithophane_sphere':wantsCyl?'lithophane_cylinder':wantsArc?'lithophane_arc':'lithophane';
  const hasImage=images.length>0||!!body.pendingGeneration;
  if(!hasImage&&result.route==='chat'&&!result.generation)return;
  const prev=body.pendingGeneration||result.generation||{};
  const d=extractDiameterMm(prompt)||extractDiameterMm(context)||prev.width||80;
  const width=Math.max(30,Math.min(220,Math.round(d)));
- const height=mode==='lithophane_sphere'?width:Math.max(30,Math.min(220,Math.round(prev.height||width)));
- const hole=Math.max(4,Math.min(40,Math.round((extractHoleMm(prompt)||extractHoleMm(context)||prev.hole||8)*10)/10));
+ const height=mode==='lithophane_sphere'?width:Math.max(30,Math.min(220,Math.round(prev.height||(mode==='lithophane_cylinder'||mode==='lithophane_arc'?100:width))));
+ const hole=Math.max(4,Math.min(60,Math.round((extractHoleMm(prompt)||extractHoleMm(context)||prev.hole||(mode==='lithophane_cylinder'?28:8))*10)/10));
  const baseThickness=Math.max(.8,Math.min(1.6,Number(prev.baseThickness)||1));
  const depth=Math.max(1.4,Math.min(3.2,Number(prev.depth)||2.2));
- const subject=(prev.subject&&prev.subject.trim().length>=3?prev.subject:mode==='lithophane_sphere'?'Bola de Navidad esférica en litofanía con aro superior y abertura inferior para LED':'Litofanía fotográfica para retroiluminar').slice(0,240);
+ const subject=(prev.subject&&prev.subject.trim().length>=3?prev.subject:mode==='lithophane_sphere'?'Bola de Navidad esférica en litofanía con aro superior y abertura inferior para LED':mode==='lithophane_cylinder'?'Fanal cilíndrico 360° en litofanía':mode==='lithophane_arc'?'Litofanía curva autoportante de mesa':'Litofanía fotográfica para retroiluminar').slice(0,240);
  result.generation=validateGeneration({mode,subject,width,height,baseThickness,depth,hole,palette:[],redraw:false});
  result.route='relief';result.canApply=false;result.forgePrompt='';result.expectedSize=null;
  if(!result.message||/necesito un dato|qu[eé] di[aá]metro|prefer[ií]s|adjunt[aá]|pasame la foto/i.test(result.message)){
   result.message=mode==='lithophane_sphere'
    ?`Te armo la bola de Navidad esférica de ${width} mm con tu foto tallada en litofanía, aro superior integrado para colgar, apoyo plano y abertura inferior de ${hole} mm para la lucecita LED en blanco natural translúcido.`
+   :mode==='lithophane_cylinder'
+   ?`Te armo el fanal cilíndrico en litofanía de ${width} mm de diámetro y ${height} mm de alto, con entrada inferior de ${hole} mm para la luz.`
+   :mode==='lithophane_arc'
+   ?`Te armo la litofanía curva autoportante de ${width} × ${height} mm para apoyar directo sobre una mesa o repisa.`
    :`Te armo la litofanía de ${width} × ${height} mm con tu foto, lista para imprimir en blanco natural o translúcido.`;
  }
 }
@@ -104,11 +121,14 @@ MENSAJE: una o dos frases cortas, en lenguaje cotidiano, sin mencionar cómo se 
 const creativeInstructions=`
 MOTOR CREATIVO DE ALFRED (prioridad sobre las limitaciones antiguas de plantillas): resolvé la intención antes de elegir cómo construir. No limites todo a chapitas, letras o unos pocos íconos.
 1. Objetos funcionales o geométricos (botella, maceta, recipiente, soporte, luna/esfera sin foto, espada geométrica): freeDesign con operaciones, medidas reales y paredes. Podés combinar elipsoides, cápsulas, anillos, perfiles y contornos para formas variadas. No impongas una placa si pide un objeto con volumen.
-2. Motivos visuales detallados, escudos, emblemas, dibujos, rostros en relieve, galaxias decorativas y LITOFANÍAS: existe generación visual y conversión a RELIEVE 3D o LITOFANÍA 3D. Devolvé generation={mode:'relief'|'lithophane'|'lithophane_sphere',subject:descripción completa autosuficiente del motivo,width:ancho o diámetro en mm,height:alto en mm,baseThickness:base o pared mínima en mm,depth:espesor adicional de relieve/sombra en mm,hole:diámetro de abertura inferior en mm,palette:colores,redraw:boolean}, canApply=false, params actuales, expectedSize=null.
-LITOFANÍAS (plana o esférica / bola de Navidad): cuando pidan una litofanía para retroiluminar con una luz o LED (zones claras más finas y zonas oscuras más gruesas, en PLA blanco natural o translúcido):
-- Si es una bola de Navidad, esfera o adorno esférico para colgar en el árbol: usá mode='lithophane_sphere', width=height=diámetro en mm (si dice «7 u 8 cm» asumí 80 mm sin frenar a preguntar), baseThickness=1 (pared mínima para luces), depth=2.2 (espesor adicional para sombras), hole=diámetro en mm de la abertura circular inferior para meter el LED (si pide abertura para una lucecita LED del árbol y no da medida exacta, asumí hole=8 mm y contalo en message para que lo ajuste si quiere), palette=[] y redraw=false (usa su fotografía real directamente sin redibujarla). La esfera en litofanía ya incluye automáticamente el aro superior integrado para colgar, apoyo plano y la abertura inferior circular para el LED.
+2. Motivos visuales detallados, escudos, emblemas, dibujos, rostros en relieve, galaxias decorativas, LITOFANÍAS y CORTANTES/SELLOS: existe generación visual y conversión a RELIEVE 3D, LITOFANÍA 3D o CORTANTE. Devolvé generation={mode:'relief'|'lithophane'|'lithophane_sphere'|'lithophane_arc'|'lithophane_cylinder'|'cutter',subject:descripción completa autosuficiente del motivo,width:ancho o diámetro en mm,height:alto en mm,baseThickness:base o pared mínima en mm,depth:espesor adicional de relieve/sombra o alto de filo en mm,hole:diámetro de abertura inferior en mm,palette:colores,redraw:boolean}, canApply=false, params actuales, expectedSize=null.
+LITOFANÍAS (plana, curva autoportante, fanal cilíndrico o bola de Navidad esférica): cuando pidan una litofanía para retroiluminar con una luz o LED (zonas claras más finas y zonas oscuras más gruesas, en PLA blanco natural o translúcido):
+- Si es una bola de Navidad, esfera o adorno esférico para colgar en el árbol: usá mode='lithophane_sphere', width=height=diámetro en mm (si dice «7 u 8 cm» asumí 80 mm sin frenar a preguntar), baseThickness=1 (pared mínima para luces), depth=2.2 (espesor adicional para sombras), hole=diámetro en mm de la abertura circular inferior para meter el LED (si pide abertura para una lucecita LED del árbol y no da medida exacta, asumí hole=8 mm y contalo en message para que lo ajuste si quiere), palette=[] y redraw=false.
+- Si es un fanal, cilindro o pantalla cilíndrica 360° en litofanía: usá mode='lithophane_cylinder', width=diámetro (por defecto 80), height=alto (por defecto 100), baseThickness=1, depth=2.2, hole=diámetro de entrada inferior (por defecto 28 mm para vela LED o portalámparas), palette=[] y redraw=false.
+- Si es una litofanía curva autoportante (con pie propio para apoyar parada en una mesa o escritorio): usá mode='lithophane_arc', width=80, height=100, baseThickness=1, depth=2.2, hole=0, palette=[] y redraw=false.
 - Si es una litofanía plana o placa: usá mode='lithophane', width y height según el pedido (o 80x100 mm por defecto), baseThickness=0.8 a 1, depth=2.2, hole=0, palette=[] y redraw=false.
-- Si pide litofanía pero todavía NO adjuntó la foto ni había una foto previa, usá route='chat', canApply=false, generation=null y pedile que adjunte la foto con el botón +. Si YA adjuntó la foto, CONSTRUÍ PRIMERO con supuestos estándar razonables (por ejemplo 80 mm de diámetro y entrada inferior de 8 mm para un LED navideño) sin frenar con preguntas.
+- Si es un cortante de galletitas o sello para masa/cerámica a partir de un dibujo o motivo: usá mode='cutter', width y height (por defecto 80x80 mm), baseThickness=2.4, depth=10, hole=0, palette=[].
+- Si pide litofanía pero todavía NO adjuntó la foto ni había una foto previa, usá route='chat', canApply=false, generation=null y pedile que adjunte la foto con el botón +. Si YA adjuntó la foto (una o varias), CONSTRUÍ PRIMERO con supuestos estándar razonables sin frenar con preguntas.
 COLORES DEL RELIEVE (palette): el relieve SÍ puede salir multicolor para Bambu Studio con AMS: cada color es una parte separada del 3MF, con su filamento. palette=[] es un solo filamento. Si la persona pide colores, «los colores reales», «a color», multicolor, AMS o imprimir en varios filamentos, o si el motivo es un escudo, bandera o logo cuyo atractivo son sus colores y no pidió un solo color, devolvé palette con 2 a 4 colores #RRGGBB: palette[0] es la placa y el fondo (normalmente blanco #ffffff, o el color de fondo del emblema), y los demás son los colores del motivo en orden de importancia, usando los colores reales conocidos del emblema o los que ves en la imagen adjunta (por ejemplo, Newell's Old Boys: ['#ffffff','#d71920','#111111']). Las letras o detalles del mismo color que el fondo quedan en el color de la placa. Para recolorear un relieve que ya existe, conservá el mismo subject y las medidas y cambiá solo palette. NUNCA respondas que no se puede hacer en colores ni mandes a la persona a pintar zonas en Bambu Studio: hacelo. Máximo 4 colores en total (los carretes del AMS); si el emblema tiene más, uní los parecidos y decilo en una frase. No intentes dibujar un escudo oficial inventando letras, una estrella o un polígono genérico. Alfred genera la imagen y construye el relieve automáticamente.
 Si pide un escudo conocido (Newell's Old Boys de Rosario, Rosario Central, Manchester United) sin imagen, ofrecé generation y explicá que será una interpretación visual, con una referencia adjunta puede conservar mejor el emblema. Nunca afirmes que es el archivo oficial. No bloquees porque no adjuntó imagen. Para motivos sin medidas, sugerí placa 80x80 mm, base2 y relieve3; para espada en relieve sugerí 40x120. No heredes medidas de la chapita actual. Decí los supuestos y permití ajustarlos en el panel.
 Si hay una imagen de un escudo, dibujo o rostro para relieve, NO preguntes diámetro de cuello, paredes, simetría ni dimensiones de cada tramo: esas reglas son para reconstruir objetos físicos. La imagen se usará para generar el mapa del relieve o convertirla directamente. Describí lo que ves sin afirmar identidad no comprobada.

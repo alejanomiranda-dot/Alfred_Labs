@@ -105,6 +105,9 @@ body[data-mode=empty] .chat,body[data-mode=empty] .piece,body[data-mode=empty] .
 .msg.event .tick{color:var(--ok);font-weight:600}
 .msg.event span.text{flex:1}
 .msg.event button{padding:2px 8px;font-size:12px}
+.msg-suggestions{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.msg-suggestions button{padding:4px 10px;border-radius:999px;font-size:12px;background:var(--surface-2);color:var(--text-2);border-color:var(--line)}
+.msg-suggestions button:hover{color:var(--text);border-color:var(--accent)}
 .msg.thinking{color:var(--text-2);font-size:13px;display:flex;align-items:center;gap:8px}
 .msg.thinking::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 1.2s infinite ease-in-out}
 @keyframes pulse{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}

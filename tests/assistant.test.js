@@ -95,5 +95,13 @@ test('litofanía esférica navideña con foto construye directo en relief y recu
  assert.equal(r.generation.mode,'lithophane_sphere');
  assert.equal(r.generation.width,80);
  assert.equal(r.generation.hole,8);
+ // Litofanía curva, lámpara cilíndrica 360° y cortante con sello:
+ r=await proposeDesign({prompt:'Haceme un portarretrato de litofanía curva autoportante con esta foto',imageDataUrls:[imageDataUrl],params:defaults},'test-key',reply({route:'chat',message:'¿De qué ancho?',canApply:false,params:defaults}));
+ assert.equal(r.route,'relief');assert.equal(r.generation.mode,'lithophane_arc');
+ r=await proposeDesign({prompt:'Quiero una pantalla de lámpara cilíndrica en litofanía con mi foto',imageDataUrls:[imageDataUrl],params:defaults},'test-key',reply({route:'chat',message:'Listo',canApply:false,params:defaults}));
+ assert.equal(r.route,'relief');assert.equal(r.generation.mode,'lithophane_cylinder');
+ r=await proposeDesign({prompt:'Quiero un cortante de galletita con sello a partir de este dibujo',imageDataUrls:[imageDataUrl],params:defaults},'test-key',reply({route:'chat',message:'¿De cuántos cm?',canApply:false,params:defaults}));
+ assert.equal(r.route,'relief');assert.equal(r.generation.mode,'cutter');
 });
+
 
