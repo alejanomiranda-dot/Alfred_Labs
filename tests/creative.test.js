@@ -9,6 +9,8 @@ import {designService} from '../server/design-service.js';
 import {checkProposal,pendingContext} from '../src/proposals.js';
 import {stlBytes,threeMfBytes} from '../src/export.js';
 import {countParts,reviewPrint} from '../src/printability.js';
+import {orderQuadCorners,solveHomography,applyHomography} from '../src/photo-measure.js';
+import {rememberFromPrompt} from '../src/settings.js';
 const api=await Module();api.setup();
 const spec={mode:'relief',subject:'Luna de prueba',width:80,height:60,baseThickness:2,depth:3};
 
@@ -151,4 +153,57 @@ test('litofanía plana y esférica: zonas oscuras más gruesas, claras finas, es
  const report=reviewPrint(model.combined,model.params);
  assert.ok(!report.issues.some(i=>i.id==='parts'||i.id==='thin'||i.id==='bed'),'sin partes sueltas, paredes finas ni falta de apoyo: '+JSON.stringify(report.issues));
 });
+test('litofanía curva autoportante, pantalla cilíndrica 360° y cortante con sello construyen sólidos cerrados e imprimibles',()=>{
+ const n=28,p=new Uint8ClampedArray(n*n*4);
+ for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+  const inside=Math.hypot(x-n/2,y-n/2)<n*.34;
+  const v=inside?(x<n/2?30:180):250,i=(y*n+x)*4;
+  p[i]=p[i+1]=p[i+2]=v;p[i+3]=255;
+ }
+ const arcSpec=validateGeneration({mode:'lithophane_arc',subject:'Portarretrato curvo en litofanía',width:90,height:70,baseThickness:.8,depth:2.2});
+ const arcMesh=reliefMesh(p,n,n,arcSpec);edgesClosed(arcMesh);
+ const arcModel=buildModel(api,generatedParams(defaults,arcMesh,arcSpec));edgesClosed(arcModel.combined);
+ assert.ok(arcModel.volume>1000,'volumen positivo en litofanía curva: '+arcModel.volume);
+ assert.ok(Math.abs(arcModel.dimensions[2]-70)<1.5);
+
+ const cylSpec=validateGeneration({mode:'lithophane_cylinder',subject:'Lámpara cilíndrica 360 en litofanía',width:80,height:90,baseThickness:.9,depth:2.1,hole:12});
+ const cylMesh=reliefMesh(p,n,n,cylSpec);edgesClosed(cylMesh);
+ const cylModel=buildModel(api,generatedParams(defaults,cylMesh,cylSpec));edgesClosed(cylModel.combined);
+ assert.ok(cylModel.volume>2000,'volumen positivo en litofanía cilíndrica: '+cylModel.volume);
+ assert.ok(Math.abs(cylModel.dimensions[0]-80)<2.5);
+ assert.ok(Math.abs(cylModel.dimensions[1]-80)<2.5);
+ assert.ok(Math.abs(cylModel.dimensions[2]-90)<1.5);
+
+ const cutterSpec=validateGeneration({mode:'cutter',subject:'Cortante de galletita con sello interior',width:75,height:75,baseThickness:2,depth:10});
+ const cutterMesh=reliefMesh(p,n,n,cutterSpec);edgesClosed(cutterMesh);
+ const cutterModel=buildModel(api,generatedParams(defaults,cutterMesh,cutterSpec));edgesClosed(cutterModel.combined);
+ assert.ok(cutterModel.volume>1500,'volumen positivo en cortante: '+cutterModel.volume);
+ assert.deepEqual(cutterModel.dimensions.map(Math.round),[75,75,12]);
+});
+test('caja con tapa encastrable (lidded_box) apoya caja y tapa en la cama con holgura lista para imprimir',()=>{
+ const model=buildModel(api,{...defaults,kind:'free',freeDesign:{version:1,nodes:[{type:'lidded_box',size:[60,40,30],wallThickness:2.4,floorThickness:2,rounding:4,position:[0,0,0],rotation:[0,0,0]}]}});
+ edgesClosed(model.combined);
+ assert.equal(countParts(model.combined),2);
+ assert.ok(model.dimensions[0]>120,'caja y tapa lado a lado en la cama: '+model.dimensions[0]);
+ const report=reviewPrint(model.combined,model.params);
+ assert.ok(!report.issues.some(i=>i.id==='bed'),'caja y tapa apoyan en Z=0');
+});
+test('rectificación homográfica de tarjeta de 4 esquinas y memoria de medidas frecuentes del usuario',()=>{
+ // Cuadrilátero inclinado que proyecta una tarjeta de 85.6 × 53.98 mm:
+ const rawCorners=[[320,210],[100,190],[340,80],[110,95]];
+ const ordered=orderQuadCorners(rawCorners);
+ assert.equal(ordered.src.length,4);
+ const H=solveHomography(ordered.src,ordered.dst);
+ assert.ok(Array.isArray(H)&&H.length===9);
+ const p0=applyHomography(H,ordered.src[0]),p1=applyHomography(H,ordered.src[1]),p2=applyHomography(H,ordered.src[2]);
+ assert.ok(Math.hypot(p1[0]-p0[0],p1[1]-p0[1])>85.5&&Math.hypot(p1[0]-p0[0],p1[1]-p0[1])<85.7);
+ assert.ok(Math.hypot(p2[0]-p1[0],p2[1]-p1[1])>53.9&&Math.hypot(p2[0]-p1[0],p2[1]-p1[1])<54.1);
+
+ const s={styleNotes:''};
+ assert.equal(rememberFromPrompt(s,'Quiero un soporte para mi celular de 78x162 mm con imanes de 8x3 mm y entrada para un LED de 10 mm'),true);
+ assert.match(s.styleNotes,/celular: 78x162 mm/i);
+ assert.match(s.styleNotes,/imán: 8x3 mm/i);
+ assert.match(s.styleNotes,/luz LED: 10 mm/i);
+});
+
 
