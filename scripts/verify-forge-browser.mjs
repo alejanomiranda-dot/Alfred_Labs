@@ -128,8 +128,13 @@ try{
  assert.equal(keychainParams.keychain.name,'logo-test.png','El QR adjunto no reemplaza el logo original');
  await page.locator('#printDialog [data-close]').click();
 
- // 10. Abrir desde «Mis diseños» recupera la pieza de Forge guardada.
- await page.locator('#libraryToggle').click();await page.locator('.library-card button',{hasText:'Abrir'}).first().click();
+ // 10. Abrir desde «Mis diseños» recupera la pieza de Forge guardada a mano en el paso 5. Cada cambio se guarda
+ // solo, así que el proyecto siguió sumando versiones (caja, relieve, litofanía): se abre la versión «Guardado a mano».
+ await page.locator('#libraryToggle').click();
+ const savedCard=page.locator('.library-card').filter({has:page.locator('.version-list button',{hasText:'Guardado a mano'})});
+ await savedCard.waitFor({timeout:10000});
+ await savedCard.locator('button',{hasText:/^Versiones/}).click();
+ await savedCard.locator('.version-list button',{hasText:'Guardado a mano'}).click();
  assert.match(await dims(),/78 × 78 × 140/);
 
  // 10b. Logo y QR en un solo pedido: se adjuntan juntos y Alfred arma el llavero sin volver a pedir nada.
