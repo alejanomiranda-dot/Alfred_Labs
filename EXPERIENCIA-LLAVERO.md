@@ -29,6 +29,9 @@ La pantalla inicial también mezclaba siete formas de empezar, cuatro tipos de p
 - Vistas de frente y dorso, con el chat apartado durante este recorrido. El 3MF se descarga desde la vista previa; «Usar en el taller» es opcional.
 - El 3MF guarda la configuración y puede reabrirse como proyecto editable, sin exigir al usuario un segundo archivo ni volver a cargar el logo para cambiar el enlace.
 - Los pedidos de llavero/logo/QR en el chat abren el creador directo, evitando el desvío por generación visual.
+- Medidas libres desde 25 × 25 mm y espesor desde 1,6 mm: Alfred aplica lo que se pide dentro de ese rango (con un aviso si queda fino) y no impone mínimos propios. El QR del dorso se agranda o achica para llenar la placa con al menos 2 mm de borde libre, y el logo se escala al frente.
+- Enganche a elección: agujero dentro de la placa o argolla arriba (solo el agujero con su reborde de 2 mm, fuera de la placa), que deja toda la placa para el logo y el QR. Probado con 35 × 35 mm, 1,8 mm y argolla: el QR de `https://www.mutualunir.com.ar/` se lee desde el 3MF exportado.
+- En el chat, los cambios de ancho, alto, espesor, agujero, enganche y enlace se aplican de verdad; si una medida no entra, Alfred explica por qué y deja la pieza como estaba, en lugar de decir «listo».
 
 ## Pieza real generada
 

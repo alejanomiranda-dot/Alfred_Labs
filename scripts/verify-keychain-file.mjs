@@ -14,7 +14,7 @@ const bytes=await fs.readFile(file),files=unzipSync(bytes),xml=strFromU8(files['
 const params=validate(JSON.parse(strFromU8(files['Metadata/taller-de-vero.json'])));
 assert.equal(params.kind,'keychain');assert.equal(params.qrText,expected);
 assert.match(xml,/unit="millimeter"/);
-const decoded=qrFromExport(bytes,Math.min(params.width-8,params.height-18));
+const decoded=qrFromExport(bytes);
 assert.equal(decoded,expected,'El QR debe leerse desde los triángulos exportados del dorso');
 const api=await Module();api.setup();const solids=[];
 try{

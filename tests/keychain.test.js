@@ -28,7 +28,7 @@ test('llavero de dos caras: logo real por regiones, dorso plano, sólido y hasta
  assert.ok(new Set(model.parts.map(p=>p.color)).size<=4,'Hasta 4 filamentos');assert.equal(model.qr.face,'back');assert.ok(model.qr.module>=.8);assert.ok(model.volume>0);
  const partsVolume=model.parts.reduce((sum,part)=>{const raw=new api.Mesh({numProp:part.mesh.numProp,vertProperties:part.mesh.positions,triVerts:part.mesh.triangles}),solid=new api.Manifold(raw);const volume=solid.volume();solid.delete();return sum+volume;},0);
  assert.ok(Math.abs(partsVolume-model.volume)<.001,'Los colores no se solapan y completan la pieza');
- assert.equal(qrFromExport(threeMfBytes(model),model.qr.size),url,'El QR exportado se lee desde el dorso, sin espejo');
+ assert.equal(qrFromExport(threeMfBytes(model),model.qr.size,model.qr.offsetY),url,'El QR exportado se lee desde el dorso, sin espejo');
  const vertices=model.base.positions,k=model.base.numProp;
  const boundsAt=z=>{const points=[];for(let i=0;i<vertices.length;i+=k)if(Math.abs(vertices[i+2]-z)<1e-4)points.push(Math.abs(vertices[i]));return Math.max(...points);};
  assert.ok(boundsAt(0)<25&&boundsAt(3.2)<25,'Ambas aristas exteriores tienen bisel');
@@ -37,15 +37,15 @@ test('llavero de dos caras: logo real por regiones, dorso plano, sólido y hasta
 
 test('proyecto y 3MF conservan el logo, las dos caras y el destino exacto del QR',()=>{
  const first=buildModel(api,params()),files=unzipSync(threeMfBytes(first)),saved=validate(JSON.parse(strFromU8(files['Metadata/taller-de-vero.json']))),again=buildModel(api,saved);
- assert.equal(saved.qrText,url);assert.deepEqual(saved.keychain,first.params.keychain);assert.equal(again.volume,first.volume);assert.equal(qrFromExport(threeMfBytes(again),again.qr.size),url);
+ assert.equal(saved.qrText,url);assert.deepEqual(saved.keychain,first.params.keychain);assert.equal(again.volume,first.volume);assert.equal(qrFromExport(threeMfBytes(again),again.qr.size,again.qr.offsetY),url);
  assert.deepEqual(projectFromBytes('llavero.3mf',threeMfBytes(first)),first.params);
  assert.deepEqual(projectFromBytes('llavero.json',new TextEncoder().encode(JSON.stringify(first.params))),first.params);
 });
 
 test('se rechazan enlaces inseguros, logos inválidos y QR demasiado fino',()=>{
  for(const value of ['javascript:alert(1)','file:///etc/passwd','https://user:secret@example.com','sin enlace'])assert.throws(()=>keychainUrl(value));
- assert.throws(()=>validateKeychain({version:1,layers:[]}));assert.throws(()=>buildModel(api,{...params(),width:30}));
- assert.throws(()=>buildModel(api,{...params(),qrText:'https://example.com/'+('a'.repeat(120))}),/fino/);
+ assert.throws(()=>validateKeychain({version:1,layers:[]}));assert.throws(()=>buildModel(api,{...params(),width:20}));
+ assert.throws(()=>buildModel(api,{...params(),width:25,height:25,qrText:'https://example.com/'+('a'.repeat(120))}),/fino/);
  assert.equal(validate({...defaults}).keychain,null);
  assert.throws(()=>buildModel(api,{...params(),baseColor:'#111111'}),/clara/);
 });
@@ -88,7 +88,7 @@ test('los contornos del logo son suaves, sin escalones de píxel, también en el
  // A disk logo exported to 3MF: the top face of the relief follows the circle instead of a pixel staircase.
  const size=128,data=new Uint8ClampedArray(size*size*4);
  for(let y=0;y<size;y++)for(let x=0;x<size;x++)if(Math.hypot(x+.5-64,y+.5-64)<50)data.set([40,40,40,255],(y*size+x)*4);
- const logo=traceColorLogo(data,size,size,'Disco'),model=buildModel(api,{...params(),keychain:logo}),scale=Math.min(40/logo.width,45/logo.height);
+ const logo=traceColorLogo(data,size,size,'Disco'),model=buildModel(api,{...params(),keychain:logo}),scale=model.logo.scale;
  const xml=modelXml(model),object=[...xml.matchAll(/<object id="\d+" type="model" name="([^"]+)" pid="1" pindex="\d+"><mesh><vertices>(.*?)<\/vertices>/gs)].find(m=>m[1].startsWith('Logo'));
  const top=[...object[2].matchAll(/<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"\/>/g)].map(m=>m.slice(1).map(Number)).filter(v=>Math.abs(v[2]-3.8)<1e-4);
  const cx=(Math.max(...top.map(v=>v[0]))+Math.min(...top.map(v=>v[0])))/2,cy=(Math.max(...top.map(v=>v[1]))+Math.min(...top.map(v=>v[1])))/2;
@@ -116,7 +116,7 @@ test('«el nombre en negro» pinta solo el texto, conserva 4 filamentos y el tex
   assert.ok(model.parts.filter(p=>p.region==='marca').every(p=>colorName(p.color)!=='negro'),'La marca no se pinta de negro');
   assert.ok(new Set(model.parts.map(p=>p.color)).size<=4,'Hasta 4 filamentos con la base');
   assert.match(modelXml(model),/<base name="Texto del logo · negro" displaycolor="#1B1B1BFF"\/>/);
-  assert.equal(qrFromExport(threeMfBytes(model),model.qr.size),'https://www.mutualunir.com.ar/','El QR negro se sigue leyendo');
+  assert.equal(qrFromExport(threeMfBytes(model),model.qr.size,model.qr.offsetY),'https://www.mutualunir.com.ar/','El QR negro se sigue leyendo');
   // Asking again does not repeat the same change: it says it is already done.
   assert.match(planKeychainColorChange(next,second).message,/^El nombre ya está en negro\. Si lo seguís viendo violeta, descargá el 3MF de nuevo/);
  }
@@ -161,4 +161,34 @@ test('un 3MF guardado por Alfred abierto como archivo 3D vuelve como proyecto, c
  assert.deepEqual(again.parts.map(p=>[p.name,p.color]),model.parts.map(p=>[p.name,p.color]),'Mismas partes y colores, el texto sigue en negro');
  assert.equal(savedProjectIn('pieza.stl',stlBytes(model.combined)),null,'Un STL se importa como forma');
  assert.equal(savedProjectIn('otro.3mf',zipSync({'3D/3dmodel.model':strToU8('<model/>')})),null,'Un 3MF de otro programa se importa como forma');
+});
+
+test('llavero chico y delicado: 35 × 35 mm, 1,8 mm, argolla arriba y QR con 2 mm de borde',()=>{
+ const model=buildModel(api,{...brandParams(),width:35,height:35,thickness:1.8,hook:'ring'});
+ closed(model.combined);model.parts.forEach(p=>closed(p.mesh));
+ assert.equal(qrFromExport(threeMfBytes(model),model.qr.size,model.qr.offsetY),'https://www.mutualunir.com.ar/','El QR se lee');
+ assert.equal(qrFromExport(threeMfBytes(model)),'https://www.mutualunir.com.ar/','El QR se encuadra solo');
+ assert.ok(model.qr.module>=.8,'Módulos imprimibles');
+ const qr=model.parts.find(p=>p.region==='qr').mesh,xs=[],ys=[];for(let i=0;i<qr.positions.length;i+=qr.numProp){xs.push(qr.positions[i]);ys.push(qr.positions[i+1]);}
+ for(const edge of [17.5-Math.max(...xs),Math.min(...xs)+17.5,17.5-Math.max(...ys),Math.min(...ys)+17.5])assert.ok(edge>=2-1e-6,'Borde libre de al menos 2 mm: '+edge);
+ assert.ok(Math.max(...xs)-Math.min(...xs)>30,'El QR llena la placa');
+ // The ring stands above the plate: only the ring and its rim, centred, with the hole outside the plate.
+ const base=model.base,above=[];for(let i=0;i<base.positions.length;i+=base.numProp)if(base.positions[i+1]>17.5+1e-6)above.push(base.positions[i]);
+ assert.ok(above.length&&Math.max(...above.map(Math.abs))<=4+1e-6,'Arriba solo sobresale la argolla');
+ assert.equal(model.dimensions[0],35);assert.ok(Math.abs(model.dimensions[1]-(35+4+2.4))<1e-6,'Alto total con argolla');
+ assert.ok(Math.abs(model.dimensions[2]-2.4)<1e-6,'1,8 mm de placa más 0,6 de relieve');
+ assert.ok(model.warnings.some(w=>/flexible/.test(w)),'Avisa que queda fino, sin negarse');
+});
+
+test('llavero de 35 × 35 mm con el agujero adentro también se arma y su QR se lee',()=>{
+ const model=buildModel(api,{...brandParams(),width:35,height:35,thickness:2.4});
+ closed(model.combined);assert.equal(qrFromExport(threeMfBytes(model),model.qr.size,model.qr.offsetY),'https://www.mutualunir.com.ar/');
+ assert.deepEqual(model.dimensions.slice(0,2),[35,35]);
+});
+
+test('el enganche se guarda en el proyecto y los valores inválidos se rechazan',()=>{
+ const model=buildModel(api,{...params(),hook:'ring'}),files=unzipSync(threeMfBytes(model));
+ assert.equal(validate(JSON.parse(strFromU8(files['Metadata/taller-de-vero.json']))).hook,'ring');
+ assert.equal(validate({...defaults}).hook,'hole','Los proyectos anteriores conservan el agujero');
+ assert.throws(()=>validate({...params(),hook:'gancho'}),/Enganche/);
 });

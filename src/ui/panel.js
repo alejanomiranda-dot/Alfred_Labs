@@ -80,7 +80,8 @@ function keychainControls(p,ctx){
  return [
   group('Frente',preview,change),
   group('Dorso · QR',textControl({label:'¿A dónde lleva el QR?',value:p.qrText,maxLength:180,validate:v=>keychainUrl(/^https?:\/\//i.test(v.trim())?v:'https://'+v.trim()),onCommit:v=>ctx.update({qrText:v})})),
-  group('Tamaño',numberControl({label:'Ancho',value:p.width,min:45,max:100,onCommit:(v,o)=>ctx.update({width:v},o)}),numberControl({label:'Alto',value:p.height,min:50,max:100,onCommit:(v,o)=>ctx.update({height:v},o)})),
+  group('Tamaño',numberControl({label:'Ancho',value:p.width,min:25,max:100,onCommit:(v,o)=>ctx.update({width:v},o)}),numberControl({label:'Alto de la placa',value:p.height,min:25,max:100,onCommit:(v,o)=>ctx.update({height:v},o)}),numberControl({label:'Espesor',value:p.thickness,min:1.6,max:6,step:.1,onCommit:(v,o)=>ctx.update({thickness:v},o)})),
+  group('Enganche',choiceControl({label:'Para la cadenita',value:p.hook,options:[['hole','Agujero en la placa'],['ring','Argolla arriba']],onCommit:v=>ctx.update({hook:v},{rerender:true})}),numberControl({label:'Agujero',value:p.hole,min:2,max:6,step:.5,onCommit:(v,o)=>ctx.update({hole:v},o)})),
   colors.length?group('Colores del archivo',colorControl(colors),el('p',{className:'note',textContent:'Tocá un color para cambiarlo. Base clara y hasta 3 colores del logo, para los 4 filamentos del AMS. '+(hasLogoText(p.keychain)?'El texto del logo es una parte aparte: en Bambu Studio le podés asignar cualquier filamento.':'En Bambu Studio asignale un filamento a cada parte.')})):null
  ].filter(Boolean);
 }

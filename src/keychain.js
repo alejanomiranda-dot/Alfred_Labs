@@ -243,29 +243,39 @@ export function keychainLogoPreview(config){
 export function buildKeychain(api,p){
  const logo=validateKeychain(p.keychain),url=keychainUrl(p.qrText),{CrossSection:C,Manifold:M}=api,owned=[],own=x=>(owned.push(x),x);
  try{
-  const w=p.width,h=p.height,t=p.thickness,r=p.relief;
-  if(w<45||h<50||p.shape!=='round'||t<2.4)throw Error('Para logo y QR usá una base rectangular redondeada de al menos 45 × 50 mm y 2,4 mm de espesor.');
+  const w=p.width,h=p.height,t=p.thickness,r=p.relief,ring=p.hook==='ring',size2=n=>String(n).replace('.',',');
+  if(p.shape!=='round')throw Error('El llavero con logo y QR usa una base rectangular redondeada.');
+  if(w<25||h<25||t<1.6)throw Error('El llavero con logo y QR necesita al menos 25 × 25 mm y 1,6 mm de espesor.');
   if(luminance(colorRgb(p.baseColor))<.7)throw Error('El QR del dorso necesita una base clara para mantener el contraste.');
-  const contour=[],cr=5;
+  const contour=[],cr=Math.min(5,w/5,h/5);
   for(const [cx,cy,start] of [[w/2-cr,h/2-cr,0],[-w/2+cr,h/2-cr,90],[-w/2+cr,-h/2+cr,180],[w/2-cr,-h/2+cr,270]])for(let i=0;i<=16;i++){const a=(start+i*90/16)*Math.PI/180;contour.push([cx+cr*Math.cos(a),cy+cr*Math.sin(a)]);}
-  const outline=own(new C([contour],'EvenOdd')),hole=own(own(C.circle(p.hole/2,48)).translate([0,h/2-p.hole/2-2.5])),base2=own(outline.subtract(hole));
-  const matrix=QRCode.create(url,{errorCorrectionLevel:'M'}).modules,size=Math.min(w-8,h-18),module=size/(matrix.size+8);
-  if(module<.8)throw Error('Ese enlace deja el QR demasiado fino. Acortá el enlace o aumentá el tamaño del llavero.');
+  // Hook: a hole drilled inside the plate, or a ring (argolla) with its own rim above the plate,
+  // which leaves the whole plate free for the logo and the QR.
+  const ringRim=2,ringY=h/2+p.hole/2+.4,ringR=p.hole/2+ringRim;
+  const outline=own(new C([contour],'EvenOdd')),ringDisc=ring?own(own(C.circle(ringR,64)).translate([0,ringY])):null;
+  const hole=own(own(C.circle(p.hole/2,48)).translate([0,ring?ringY:h/2-p.hole/2-2.5])),footprint=ring?own(C.union(outline,ringDisc)):outline,base2=own(footprint.subtract(hole));
+  // Light area of the back that is free for the QR: the whole plate, or the plate below the hole.
+  const freeTop=ring?h/2:h/2-p.hole-2.5,freeSide=Math.min(w,freeTop+h/2);
+  // The QR fills that area leaving at least 2 mm (and 2 modules) of light border all around.
+  const matrix=QRCode.create(url,{errorCorrectionLevel:'M'}).modules,n=matrix.size,module=Math.min(freeSide/(n+4),(freeSide-4)/n),qrSide=n*module,quiet=(freeSide-qrSide)/2,qrY=(freeTop-h/2)/2;
+  if(module<.8)throw Error(`Ese enlace deja el QR demasiado fino en ${size2(w)} × ${size2(h)} mm${ring?'':' con el agujero adentro'}. Acortá el enlace, agrandá el llavero${ring?'':' o pasá el enganche a una argolla arriba'}.`);
   const qrPolygons=[];
-  for(let row=0;row<matrix.size;row++)for(let col=0;col<matrix.size;col++)if(matrix.get(row,col)){
+  for(let row=0;row<n;row++)for(let col=0;col<n;col++)if(matrix.get(row,col)){
    // Mirror X so the underside, viewed from outside, reads in its normal orientation.
-   const x=size/2-(col+5)*module,y=size/2-(row+5)*module-3;
+   const x=qrSide/2-(col+1)*module,y=qrY+qrSide/2-(row+1)*module;
    qrPolygons.push([[x,y],[x+module,y],[x+module,y+module],[x,y+module]]);
   }
   const back=own(new C(qrPolygons,'NonZero'));
   if(back.area()-own(back.intersect(base2)).area()>.01)throw Error('El QR invade el borde o el agujero. Aumentá la base.');
-  const logoScale=Math.min((w-10)/logo.width,(h-15)/logo.height),maxLogoY=logo.height*logoScale/2-3;
-  if(maxLogoY>h/2-p.hole-3)throw Error('El logo invade el agujero del llavero.');
+  // The logo fills the front inside a margin that grows with the plate (2.5 to 5 mm), below the hole if it is inside.
+  const margin=Math.min(5,Math.max(2.5,Math.min(w,h)*.09)),logoTop=ring?h/2-margin:h/2-p.hole-2.5-1.2,logoBottom=-h/2+margin;
+  if(logoTop-logoBottom<8)throw Error('El logo no entra debajo del agujero. Agrandá el llavero o pasá el enganche a una argolla arriba.');
+  const logoScale=Math.min((w-2*margin)/logo.width,(logoTop-logoBottom)/logo.height),logoY=(logoTop+logoBottom)/2;
   // The QR takes the darkest logo color; when it lacks contrast, that color becomes a purple-black everywhere.
   const darkest=logo.layers.reduce((a,b)=>luminance(colorRgb(a.color))<luminance(colorRgb(b.color))?a:b).color.toLowerCase(),qrColor=keychainQrColor(logo,p.baseColor),paint=c=>c.toLowerCase()===darkest?qrColor:c.toLowerCase();
   const groups=new Map();let taken=null;
   for(const layer of logo.layers){
-   const polygons=layer.polygons.map(poly=>poly.map(([x,y])=>[(x-logo.width/2)*logoScale,(logo.height/2-y)*logoScale-3]));
+   const polygons=layer.polygons.map(poly=>poly.map(([x,y])=>[(x-logo.width/2)*logoScale,(logo.height/2-y)*logoScale+logoY]));
    let cross=own(new C(polygons,'EvenOdd'));
    if(cross.area()-own(cross.intersect(base2)).area()>.01)throw Error('El logo invade el borde. Aumentá el tamaño.');
    // Neighbouring colors share an outline: each layer keeps only what earlier ones left free, so parts never overlap.
@@ -280,11 +290,15 @@ export function buildKeychain(api,p){
   const inset=own(back.extrude(.6));
   // Convex outer shell: small lower chamfer and 0.4 mm upper bevel, then drill the ring hole.
   // The QR stays flush on z=0 and the full width is retained around the middle.
-  const lower=own(own(own(outline.offset(-.2)).extrude(.001)).translate([0,0,0]));
-  const middle=own(own(outline.extrude(t-.6)).translate([0,0,.2]));
-  const upper=own(own(own(outline.offset(-.4)).extrude(.001)).translate([0,0,t-.001]));
-  const shell=own(M.hull([lower,middle,upper]));
-  const bore=own(hole.extrude(t));
+  // The ring gets its own convex shell, so only the ring and its rim stand above the plate.
+  const bevelled=shape=>{
+   const lower=own(own(own(shape.offset(-.2)).extrude(.001)).translate([0,0,0]));
+   const middle=own(own(shape.extrude(t-.6)).translate([0,0,.2]));
+   const upper=own(own(own(shape.offset(-.4)).extrude(.001)).translate([0,0,t-.001]));
+   return own(M.hull([lower,middle,upper]));
+  };
+  const shell=ring?own(M.union([bevelled(outline),bevelled(ringDisc)])):bevelled(outline);
+  const bore=own(own(hole.extrude(t+2)).translate([0,0,-1]));
   const base=own(own(shell.subtract(bore)).subtract(inset)),all=own(M.union([base,...logoParts.map(g=>g.solid),inset]));
   if(all.status()!=='NoError'||all.isEmpty())throw Error('No se pudo cerrar el llavero. Revisá el logo.');
   const mesh=solid=>{const m=solid.getMesh();return {numProp:m.numProp,positions:new Float32Array(m.vertProperties),triangles:new Uint32Array(m.triVerts)};};
@@ -292,7 +306,7 @@ export function buildKeychain(api,p){
   const parts=[{mesh:mesh(base),color:p.baseColor,name:'Base clara'},...logoParts.map(g=>({mesh:mesh(g.solid),color:g.color,name:named(g),region:g.region,layerColor:g.layerColor})),{mesh:mesh(inset),color:qrColor,name:'QR del dorso · '+colorName(qrColor),region:'qr'}];
   const colors=new Set(parts.map(x=>x.color.toLowerCase()));
   if(colors.size>4)throw Error('El llavero usa '+colors.size+' colores; el AMS admite hasta 4. Uní dos colores del logo en «Colores del archivo».');
-  return {params:{...p,qrText:url},base:parts[0].mesh,detail:{numProp:3,positions:new Float32Array(),triangles:new Uint32Array()},parts,combined:mesh(all),volume:all.volume(),dimensions:[w,h,t+r],totalHeight:t+r,backArea:back.area(),warnings:[`QR en el dorso: módulos de ${module.toFixed(2)} mm y margen libre de 4 módulos. Escaneá una primera impresión antes de entregar.`,`Logo adaptado a ${colors.size-1} colores sólidos, sin regenerarlo con IA. Los degradados se simplifican para imprimir con hasta 4 filamentos.`,'Dorso plano con QR de color al ras; asigná los filamentos del 3MF en Bambu Studio.'],qr:{matrix,size,module,quietZone:4,face:'back',offsetY:-3,color:qrColor}};
+  return {params:{...p,qrText:url},base:parts[0].mesh,detail:{numProp:3,positions:new Float32Array(),triangles:new Uint32Array()},parts,combined:mesh(all),volume:all.volume(),dimensions:[w,ring?ringY+ringR+h/2:h,t+r],totalHeight:t+r,backArea:back.area(),warnings:[`QR en el dorso: módulos de ${module.toFixed(2)} mm y ${quiet.toFixed(1).replace('.',',')} mm de borde libre. Escaneá una primera impresión antes de entregar.`,`Logo adaptado a ${colors.size-1} colores sólidos, sin regenerarlo con IA. Los degradados se simplifican para imprimir con hasta 4 filamentos.`,'Dorso plano con QR de color al ras; asigná los filamentos del 3MF en Bambu Studio.',...(ring?[`Argolla arriba de ${size2(p.hole)} mm de agujero con ${ringRim} mm de reborde: la pieza mide ${size2(+(ringY+ringR+h/2).toFixed(1))} mm de alto con la argolla.`]:[]),...(t<2.2?[`Con ${size2(t)} mm de espesor queda fino y algo flexible: imprimilo con 3 o más paredes.`]:[])],logo:{scale:logoScale,offsetY:logoY},qr:{matrix,size:qrSide+2*quiet,module,quietZone:quiet/module,face:'back',offsetY:qrY,color:qrColor}};
  }finally{for(const item of owned.reverse())item.delete();}
 }
 

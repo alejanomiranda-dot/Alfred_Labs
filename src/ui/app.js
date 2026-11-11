@@ -29,7 +29,7 @@ import {renderPanel,renderStatus} from './panel.js';
 import {createPrint,download} from './print.js';
 
 const $=id=>document.getElementById(id);
-const assistantFields=['kind','project','name','phone','qrText','caption','shape','width','height','thickness','relief','hole','baseColor','detailColor','backDecoration','backStyle','backDepth','freeDesign'];
+const assistantFields=['kind','project','name','phone','qrText','caption','shape','width','height','thickness','relief','hole','hook','baseColor','detailColor','backDecoration','backStyle','backDepth','freeDesign'];
 const emptyParams=()=>({...defaults,kind:'free',project:'Mi pieza',freeDesign:null,importedMesh:null,importedColors:null,sourceInfo:null,forge:null});
 const sizeText=v=>v.map(x=>String(Math.round(x*10)/10).replace('.',',')).join(' × ')+' mm';
 const tick=()=>new Promise(r=>setTimeout(r,30));
@@ -103,7 +103,7 @@ function apply(candidate,built,note){
 function summarize(before,after){
  if(!hasPieceParams(before)||before.kind!==after.kind)return 'Pieza nueva';
  const list=proposalChanges(before,after).filter(t=>!t.startsWith('Proyecto')&&!t.includes('importada')).map(t=>t==='Nueva geometría de la pieza'?'Forma actualizada':t);
- return list.slice(0,2).join(' · ')||'Pieza actualizada';
+ return list.slice(0,4).join(' · ')||'Pieza actualizada';
 }
 function hasPieceParams(p){return !(p.kind==='free'&&!p.freeDesign);}
 // Una pieza nueva por medidas no arrastra la malla, el relieve ni las versiones de la anterior.
@@ -158,7 +158,7 @@ function quickSuggestionsFor(p){
  if(mode==='lithophane')return ['Pasar a litofanía curva de mesa','Pasar a bola de Navidad de 80 mm','Pasar a fanal cilíndrico 360°'];
  if(mode==='cutter')return ['Agrandar el cortante a 90 mm','Subir el filo a 14 mm','Pasar a placa en relieve'];
  if(mode==='relief')return ['Pasar a 4 colores para AMS','Convertir en cortante de galletitas','Agrandar a 100 × 100 mm'];
- if(p.kind==='keychain')return ['Agrandar a 60 × 70 mm','El nombre en negro','Base de 3,6 mm de grosor'];
+ if(p.kind==='keychain')return ['Achicarlo a 35 × 35 mm','Argolla arriba para la cadenita','El nombre en negro'];
  if(p.kind!=='free')return ['Hacerla circular de 40 mm','Agregar un huesito grabado atrás','Agrandar el agujero a 5 mm'];
  if(p.forge)return ['Hacerla de 100 mm de alto','Darle acabado facetado (low-poly)','Darle textura tejida'];
  if(p.freeDesign?.nodes?.some(n=>n.type==='lidded_box'))return ['División interna al medio','Paredes de 3 mm de espesor','Grabar un texto en la tapa'];
@@ -242,9 +242,16 @@ function keychainEdit(result){
  const base=S.params,patch={},url=result.params?.qrText&&result.params.qrText!==defaults.qrText?findUrl(result.params.qrText):null;
  if(url&&url!==base.qrText)patch.qrText=url;
  for(const key of ['width','height'])if(Number.isFinite(result.params?.[key])&&Math.round(result.params[key])!==base[key])patch[key]=Math.round(result.params[key]);
- const message=typeof result.message==='string'&&result.message.trim()?result.message.trim():'¿Qué querés cambiar del llavero? Puedo cambiar el tamaño, el enlace del QR o los colores del logo («el nombre en negro»).';
+ // Espesor y agujero admiten décimas (1,8 mm); el enganche puede pasar de agujero a argolla arriba.
+ for(const key of ['thickness','hole'])if(Number.isFinite(result.params?.[key])){const v=Math.round(result.params[key]*10)/10;if(v!==base[key])patch[key]=v;}
+ if(['hole','ring'].includes(result.params?.hook)&&result.params.hook!==base.hook)patch.hook=result.params.hook;
+ const message=typeof result.message==='string'&&result.message.trim()?result.message.trim():'¿Qué querés cambiar del llavero? Puedo cambiar el tamaño, el espesor, el enganche (agujero o argolla arriba), el enlace del QR o los colores del logo («el nombre en negro»).';
  if(!Object.keys(patch).length){addMessage('assistant',message);return;}
- const candidate=validate({...base,...patch}),built=build(candidate);addMessage('assistant',message);apply(candidate,built);
+ // Si la pieza no se puede armar así, se dice por qué, en vez de anunciar un cambio que no se hizo.
+ let candidate,built;
+ try{candidate=validate({...base,...patch});built=build(candidate);}
+ catch(error){addMessage('assistant','No lo pude dejar así: '+error.message.replace(/^./,c=>c.toLowerCase())+' El llavero quedó como estaba.');return;}
+ addMessage('assistant',message);apply(candidate,built);
 }
 // Llavero logo + QR: se arma en el navegador con el archivo original, sin generar imágenes.
 const colorsOf=built=>new Set(built.parts.slice(1).map(part=>part.color.toLowerCase())).size;

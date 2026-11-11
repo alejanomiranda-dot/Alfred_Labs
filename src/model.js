@@ -12,7 +12,7 @@ import serifData from 'three/examples/fonts/gentilis_bold.typeface.json' with { 
 const sansFont = new FontLoader().parse(sansData), serifFont = new FontLoader().parse(serifData);
 const covers=(f,texts)=>texts.every(t=>[...String(t||'').normalize('NFC')].every(c=>c===' '||f.data.glyphs[c]));
 export function templateFont(p){const texts=p.kind==='tag'?[p.name,p.phone]:p.kind==='logo'?[p.caption]:[];return covers(sansFont,texts)?sansFont:serifFont;}
-export const defaults = {version:3,kind:'tag',project:'Chapita de Mora',name:'MORA',phone:'11 2345 6789',qrText:'https://example.com',caption:'HECHO CON AMOR',shape:'round',width:45,height:32,thickness:2.4,relief:0.8,hole:4,baseColor:'#e9a08c',detailColor:'#fff8e9',backDecoration:'none',backStyle:'engraved',backDepth:.6,logoPolygons:null,freeDesign:null,importedMesh:null,importedColors:null,sourceInfo:null,printRotation:[0,0,0],forge:null,keychain:null};
+export const defaults = {version:3,kind:'tag',project:'Chapita de Mora',name:'MORA',phone:'11 2345 6789',qrText:'https://example.com',caption:'HECHO CON AMOR',shape:'round',width:45,height:32,thickness:2.4,relief:0.8,hole:4,hook:'hole',baseColor:'#e9a08c',detailColor:'#fff8e9',backDecoration:'none',backStyle:'engraved',backDepth:.6,logoPolygons:null,freeDesign:null,importedMesh:null,importedColors:null,sourceInfo:null,printRotation:[0,0,0],forge:null,keychain:null};
 const limits={width:[25,100],height:[25,100],thickness:[1.6,6],relief:[.4,2],hole:[2,6],backDepth:[.2,1.2]};
 // Zonas de color de un relieve: contornos en mm por color, desde la altura de la placa hacia arriba.
 function validateImportedColors(c){
@@ -40,6 +40,7 @@ export function validate(raw){
   if(!Array.isArray(p.printRotation)||p.printRotation.length!==3||!p.printRotation.every(v=>[-180,-90,0,90,180].includes(v)))throw Error('Orientación de impresión inválida.');
   if(p.kind!=='free')p.printRotation=[0,0,0];
   if(p.kind==='free'&&!p.freeDesign)throw Error('Describí la pieza libre al asistente para generar su geometría.');
+  if(!['hole','ring'].includes(p.hook))throw Error('Enganche del llavero inválido.');
   if(!['none','bone'].includes(p.backDecoration)||!['engraved','raised'].includes(p.backStyle))throw Error('Decoración del dorso inválida.');
   for(const [key,[min,max]] of Object.entries(limits)){p[key]=p.kind==='free'?defaults[key]:Number(p[key]);if(!Number.isFinite(p[key])||p[key]<min||p[key]>max)throw Error(`Revisá ${key}: debe estar entre ${min} y ${max} mm.`);}
   // Legacy "round" projects are rounded rectangles. A circle has one diameter.

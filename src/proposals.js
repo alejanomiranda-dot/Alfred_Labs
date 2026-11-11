@@ -25,6 +25,7 @@ export function proposalChanges(base,candidate){
   else if(key==='importedMesh')changes.push(candidate.sourceInfo?'Nueva geometría del relieve':'Nueva geometría de la pieza importada');
   else if(key==='sourceInfo'&&candidate.sourceInfo)changes.push('Relieve: base de '+candidate.sourceInfo.baseThickness+' mm y profundidad de '+candidate.sourceInfo.depth+' mm');
   else if(key==='freeDesign')changes.push('Nueva geometría de la pieza');
+  else if(key==='hook')changes.push('Enganche: '+(candidate.hook==='ring'?'argolla arriba':'agujero en la placa'));
   else if(key==='backDecoration')changes.push('Dorso: '+(candidate[key]==='bone'?'Huesito':'Sin decoración'));
   else if(key==='backStyle')changes.push('Dorso: '+(candidate[key]==='raised'?'Relieve':'Grabado'));
   else if(labels[key])changes.push(labels[key]+': '+base[key]+' → '+candidate[key]+(typeof candidate[key]==='number'?' mm':''));

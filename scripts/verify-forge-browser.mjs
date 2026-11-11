@@ -125,7 +125,7 @@ try{
  await page.locator('#viewBack').click();await page.screenshot({path:'artifacts/forge/llavero-dorso.png'});
  await page.locator('#printOpen').click();
  const keychainPromise=page.waitForEvent('download');await page.locator('#export3mf').click();await (await keychainPromise).saveAs('artifacts/forge/llavero.3mf');
- assert.equal(qrFromExport(await fs.readFile('artifacts/forge/llavero.3mf'),42),'https://mutualunir.com/');
+ assert.equal(qrFromExport(await fs.readFile('artifacts/forge/llavero.3mf')),'https://mutualunir.com/');
  const keychainFiles=(await import('fflate')).unzipSync(await fs.readFile('artifacts/forge/llavero.3mf'));
  const keychainParams=JSON.parse(new TextDecoder().decode(keychainFiles['Metadata/taller-de-vero.json']));
  assert.equal(keychainParams.keychain.name,'logo-test.png','El QR adjunto no reemplaza el logo original');
