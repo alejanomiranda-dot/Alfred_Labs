@@ -173,8 +173,9 @@ test('llavero chico y delicado: 35 × 35 mm, 1,8 mm, argolla arriba y QR con 2 m
  for(const edge of [17.5-Math.max(...xs),Math.min(...xs)+17.5,17.5-Math.max(...ys),Math.min(...ys)+17.5])assert.ok(edge>=2-1e-6,'Borde libre de al menos 2 mm: '+edge);
  assert.ok(Math.max(...xs)-Math.min(...xs)>30,'El QR llena la placa');
  // The ring stands above the plate: only the ring and its rim, centred, with the hole outside the plate.
- const base=model.base,above=[];for(let i=0;i<base.positions.length;i+=base.numProp)if(base.positions[i+1]>17.5+1e-6)above.push(base.positions[i]);
- assert.ok(above.length&&Math.max(...above.map(Math.abs))<=4+1e-6,'Arriba solo sobresale la argolla');
+ const base=model.base,above=[],ringOnly=[];for(let i=0;i<base.positions.length;i+=base.numProp){if(base.positions[i+1]>17.5+1e-6)above.push(base.positions[i]);if(base.positions[i+1]>17.5+1.6)ringOnly.push(base.positions[i]);}
+ assert.ok(above.length&&Math.max(...above.map(Math.abs))<=6,'Arriba no hay lateral: solo la argolla y su unión redondeada');
+ assert.ok(Math.max(...ringOnly.map(Math.abs))<=4+1e-6,'Pasada la unión, solo la argolla con su reborde');
  assert.equal(model.dimensions[0],35);assert.ok(Math.abs(model.dimensions[1]-(35+4+2.4))<1e-6,'Alto total con argolla');
  assert.ok(Math.abs(model.dimensions[2]-2.4)<1e-6,'1,8 mm de placa más 0,6 de relieve');
  assert.ok(model.warnings.some(w=>/flexible/.test(w)),'Avisa que queda fino, sin negarse');

@@ -252,8 +252,10 @@ export function buildKeychain(api,p){
   // Hook: a hole drilled inside the plate, or a ring (argolla) with its own rim above the plate,
   // which leaves the whole plate free for the logo and the QR.
   const ringRim=2,ringY=h/2+p.hole/2+.4,ringR=p.hole/2+ringRim;
+  // The ring meets the plate through two small concave fillets (a closing: grow, then shrink), not a sharp notch.
+  const neckFillet=shape=>own(own(shape.offset(1.5,'Round',2,48)).offset(-1.5,'Round',2,48));
   const outline=own(new C([contour],'EvenOdd')),ringDisc=ring?own(own(C.circle(ringR,64)).translate([0,ringY])):null;
-  const hole=own(own(C.circle(p.hole/2,48)).translate([0,ring?ringY:h/2-p.hole/2-2.5])),footprint=ring?own(C.union(outline,ringDisc)):outline,base2=own(footprint.subtract(hole));
+  const hole=own(own(C.circle(p.hole/2,48)).translate([0,ring?ringY:h/2-p.hole/2-2.5])),footprint=ring?neckFillet(own(C.union(outline,ringDisc))):outline,base2=own(footprint.subtract(hole));
   // Light area of the back that is free for the QR: the whole plate, or the plate below the hole.
   const freeTop=ring?h/2:h/2-p.hole-2.5,freeSide=Math.min(w,freeTop+h/2);
   // The QR fills that area leaving at least 2 mm (and 2 modules) of light border all around.
@@ -290,14 +292,12 @@ export function buildKeychain(api,p){
   const inset=own(back.extrude(.6));
   // Convex outer shell: small lower chamfer and 0.4 mm upper bevel, then drill the ring hole.
   // The QR stays flush on z=0 and the full width is retained around the middle.
-  // The ring gets its own convex shell, so only the ring and its rim stand above the plate.
-  const bevelled=shape=>{
-   const lower=own(own(own(shape.offset(-.2)).extrude(.001)).translate([0,0,0]));
-   const middle=own(own(shape.extrude(t-.6)).translate([0,0,.2]));
-   const upper=own(own(own(shape.offset(-.4)).extrude(.001)).translate([0,0,t-.001]));
-   return own(M.hull([lower,middle,upper]));
-  };
-  const shell=ring?own(M.union([bevelled(outline),bevelled(ringDisc)])):bevelled(outline);
+  // Outer shell built in thin slices so any outline (also the plate with its ring) gets the same edges:
+  // a 0.2 mm chamfer at the bed, the full width around the middle and a soft rounded top edge.
+  const slices=[[0,.1,.15],[.1,.2,.05]],round=Math.min(.6,t*.3),steps=Math.max(3,Math.round(round/.1));
+  slices.push([.2,t-round,0]);
+  for(let i=0;i<steps;i++){const z0=t-round+round*i/steps,z1=t-round+round*(i+1)/steps,dz=(z0+z1)/2-(t-round);slices.push([z0,z1,round-Math.sqrt(round*round-dz*dz)]);}
+  const shell=own(M.union(slices.map(([z0,z1,inset])=>own(own((inset?own(footprint.offset(-inset,'Round',2,48)):footprint).extrude(z1-z0)).translate([0,0,z0])))));
   const bore=own(own(hole.extrude(t+2)).translate([0,0,-1]));
   const base=own(own(shell.subtract(bore)).subtract(inset)),all=own(M.union([base,...logoParts.map(g=>g.solid),inset]));
   if(all.status()!=='NoError'||all.isEmpty())throw Error('No se pudo cerrar el llavero. Revisá el logo.');
