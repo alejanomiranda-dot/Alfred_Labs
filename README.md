@@ -38,7 +38,7 @@ Abrir `http://127.0.0.1:5173/` (o hacer doble clic en **Iniciar taller.cmd**). `
 ## Revisión y salida
 
 - **Mecanismos articulados**: bisagras, cadenas, engranajes y conjuntos móviles usan Forge y conservan cuerpos independientes. El proyecto guarda modo de fabricación, cantidad prevista, holgura entre superficies y pared objetivo. Se comprueban cuerpos reales, separación sobre la malla final y apoyo por cuerpo; no se aplica acabado orgánico ni se quitan componentes pequeños. Se presentan como prototipos: el laminado y la prueba física siguen pendientes para cada pieza nueva.
-- **Banco de desafíos exigentes**: `npm run verify:premium` reproduce cuatro piezas y trayectorias de movimiento revisadas, sin API. [Fuentes, laminado y criterios antes de vender](experiments/alfred-forge/challenges/README.md). La simulación por posiciones sólo cubre esos diseños concretos; no es una simulación general integrada en el chat.
+- **Banco de desafíos exigentes**: `npm run verify:premium` reproduce cinco piezas y trayectorias de movimiento revisadas, sin API. [Fuentes, laminado y criterios antes de vender](experiments/alfred-forge/challenges/README.md). La simulación por posiciones sólo cubre esos diseños concretos; no es una simulación general integrada en el chat.
 
 - Visor con regla, cotas y plano de corte.
 - **Revisión de impresión**: voladizos que necesitan soporte, paredes finas, apoyo en la cama, orientación sugerida, gramos, tiempo y costo. Son estimaciones; Bambu Studio da el valor final.
