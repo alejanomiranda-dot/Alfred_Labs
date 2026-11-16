@@ -13,7 +13,7 @@ const browser=await chromium.launch({...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTA
 try{
  const page=await browser.newPage({viewport:{width:1440,height:1000},acceptDownloads:true}),errors=[];let forgeCalls=0,critiques=0;
  page.on('pageerror',e=>errors.push(e.message));
- await page.route('**/api/assistant',route=>{const body=route.request().postDataJSON();if(body.action==='critique')critiques++;return route.fulfill({json:{route:'forge',message:'Preparo el mecanismo de prueba.',forgePrompt:'Mecanismo de dos cuerpos',canApply:false,params:{},expectedSize:null,generation:null}});});
+ await page.route('**/api/assistant',route=>{if(route.request().method()==='GET')return route.fulfill({json:{enabled:true,needsCode:false}});const body=route.request().postDataJSON();if(body.action==='critique')critiques++;return route.fulfill({json:{route:'forge',message:'Preparo el mecanismo de prueba.',forgePrompt:'Mecanismo de dos cuerpos',canApply:false,params:{},expectedSize:null,generation:null}});});
  await page.route('**/api/forge',route=>{if(route.request().method()==='GET')return route.fulfill({json:{local:true,compiler:true,ai:true}});forgeCalls++;return route.fulfill({json:result});});
  await page.goto(url);await page.waitForFunction(()=>document.body.dataset.mode==='empty');
  await page.locator('#prompt').fill('Un mecanismo articulado');await page.locator('#askAssistant').click();
