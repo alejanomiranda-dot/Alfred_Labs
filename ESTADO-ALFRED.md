@@ -1,3 +1,11 @@
+# Spinner · prueba real en navegador integrado · 16/11/2026
+
+Se probó el flujo desde la pestaña de Ale. La pestaña usaba un bundle anterior y su corrección fusionó el spinner; se conservó ese proyecto y se recargó. La app actual mantuvo dos cuerpos, detectó láminas de ~0,61 mm y recibió una corrección técnica de concavidad y equilibrio. Alfred generó un spinner de tres brazos iguales a 120°, circunscrito en 60 mm (XYZ 50×54,629×14), con separación mínima 0,4048 mm y sin zonas finas detectadas. Pasó 73 posiciones de giro y el control de centro de volumen del rotor. Bambu Studio laminó sin soportes/brim: ~12,3 g, ~36 min. Pendiente impresión física, liberación, retención, fricción y seguridad de uso infantil.
+
+El banco reproducible ahora tiene cinco fuentes y 209 posiciones de movimiento. Se incorporaron instrucciones para evitar hull global en biseles de contornos cóncavos y no forzar una caja cuadrada al pedir el diámetro circunscrito de un rotor de tres brazos. Evidencia local: `artifacts/spinner-20261116/`; fuentes y criterios: `experiments/alfred-forge/challenges/`.
+
+---
+
 # Actualización · 16/11/2026 — mecanismos y calidad de fabricación
 
 Se agregó un contrato de fabricación persistente para piezas fijas, mecanismos print-in-place y conjuntos para ensamblar. El control compara cantidad exacta de cuerpos, separación mínima medida en la malla terminada, apoyo por cuerpo y pared aproximada. Los mecanismos conservan sus componentes pequeños y no admiten acabado orgánico que cambie holguras. La corrección de un mecanismo no puede devolver una pieza fija. Los animales articulados tienen prioridad de Forge sobre el escultor que fusiona sus partes.
