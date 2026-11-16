@@ -103,11 +103,5 @@ test('litofanía esférica navideña con foto construye directo en relief y recu
  r=await proposeDesign({prompt:'Quiero un cortante de galletita con sello a partir de este dibujo',imageDataUrls:[imageDataUrl],params:defaults},'test-key',reply({route:'chat',message:'¿De cuántos cm?',canApply:false,params:defaults}));
  assert.equal(r.route,'relief');assert.equal(r.generation.mode,'cutter');
 });
-test('un título o mensaje con "mn" en vez de "mm" se corrige sin tocar el resto del texto',async()=>{
- const reply=data=>async()=>({ok:true,json:async()=>({output:[{content:[{type:'output_text',text:JSON.stringify(data)}]}]})});
- const r=await proposeDesign({prompt:'Una caja organizadora de 120 × 80 × 40 mm con paredes de 2 mm'},'test-key',reply({route:'chat',message:'Te armo una caja de 40 mn de alto.',canApply:true,params:{...defaults,kind:'free',freeDesign:{version:1,nodes:[]},project:'Caja organizadora de 120 × 80 × 40 mn'}}));
- assert.equal(r.params.project,'Caja organizadora de 120 × 80 × 40 mm');
- assert.equal(r.message,'Te armo una caja de 40 mm de alto.');
-});
 
 

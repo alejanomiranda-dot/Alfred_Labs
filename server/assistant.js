@@ -20,8 +20,6 @@ export function routeOf(result,prompt=''){
  return 'chat';
 }
 export function safeParams(raw){const out={};for(const key of Object.keys(fields))if(raw&&key in raw)out[key]=raw[key];return out;}
-// El modelo a veces escribe 'mn' en vez de 'mm' (títulos como "120 × 80 × 40 mn"); el dominio es siempre milímetros, así que se corrige sin ambigüedad.
-const fixUnitTypo=t=>typeof t==='string'?t.replace(/(\d)(\s*)mn\b/gi,'$1$2mm'):t;
 const lithoRe=/\blitofan[ií]a\b|\blithophane\b/i;
 const sphereOrnamentRe=/\b(esf[eé]ric[oa]|esfera|bola\s+de\s+navidad|adorno\s+navide[ñn]o|arbolito|colgar\s+en\s+el\s+[aá]rbol)\b/i;
 const cylLithoRe=/\b(cil[ií]ndric[oa]|cilindro|fanal|pantalla\s+cil[ií]ndrica|velador\s+cil[ií]ndrico)\b/i;
@@ -106,7 +104,7 @@ export async function proposeDesign(body,key,fetcher=fetch,{signal,model=process
  if(!response.ok){const code=data.error?.code;let message='La API no pudo responder. Intentá nuevamente.';if(code==='insufficient_quota')message='La cuenta de API no tiene cuota o créditos disponibles. Revisá la facturación del proyecto Taller 3D.';else if(response.status===401)message='La clave del servidor no fue aceptada por la API.';else if(response.status===429)message='Se alcanzó el límite de solicitudes. Esperá antes de volver a intentar.';throw Object.assign(Error(message),{status:502,code:code||'api_error'});}
  const text=data.output?.flatMap(item=>item.content||[]).find(item=>item.type==='output_text')?.text;
  if(!text)throw Object.assign(Error('El asistente no devolvió una propuesta completa. Reformulá el pedido.'),{status:502});
- const result=JSON.parse(text);if(typeof result.message!=='string'||typeof result.canApply!=='boolean')throw Error('Propuesta inválida.');result.designSource=result.designSource==='pending'?'pending':'current';result.params=safeParams(result.params);result.params.project=fixUnitTypo(result.params.project);result.params.caption=fixUnitTypo(result.params.caption);result.message=fixUnitTypo(result.message);result.generation=result.generation?validateGeneration(result.generation):null;if(result.generation)result.canApply=false;if(!(Array.isArray(result.expectedSize)&&result.expectedSize.length===3&&result.expectedSize.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0)&&result.expectedSize.some(v=>v>0)))result.expectedSize=null;
+ const result=JSON.parse(text);if(typeof result.message!=='string'||typeof result.canApply!=='boolean')throw Error('Propuesta inválida.');result.designSource=result.designSource==='pending'?'pending':'current';result.params=safeParams(result.params);result.generation=result.generation?validateGeneration(result.generation):null;if(result.generation)result.canApply=false;if(!(Array.isArray(result.expectedSize)&&result.expectedSize.length===3&&result.expectedSize.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0)&&result.expectedSize.some(v=>v>0)))result.expectedSize=null;
  result.forgePrompt=typeof result.forgePrompt==='string'?result.forgePrompt.trim().slice(0,2000):'';
  normalizeLithophane(result,body,history,images);
  result.route=routeOf(result,body.prompt);
