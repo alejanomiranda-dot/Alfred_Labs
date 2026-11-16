@@ -28,7 +28,7 @@ try{
  const params=validate(JSON.parse(await fs.readFile(file,'utf8'))),api=await Module();api.setup();assert.equal(countParts(buildModel(api,params).combined),2);
  await page.locator('#printDialog [data-close]').click();
  // Inspect the actual generated hinge rather than only the synthetic regression.
- const real=process.env.MECHANISM_PROJECT||'artifacts/premium-20261116/mejorado/bisagra.json';
+ const real=process.env.MECHANISM_PROJECT||'artifacts/premium-verification/bisagra.json';
  await page.locator('#importProject').setInputFiles(real);await page.waitForFunction(()=>/60 × 30 × 10/.test(document.getElementById('dimensions').textContent));
  await page.waitForFunction(()=>document.getElementById('pieceStatus').textContent.includes('Prototipo para laminar'));
  await page.screenshot({path:dir+'/bisagra.png',fullPage:true});
