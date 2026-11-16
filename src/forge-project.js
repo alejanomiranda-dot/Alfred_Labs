@@ -30,7 +30,9 @@ export function prepareForgeProposal(api,current,result,archive){
  const forge=validateForgeArchive(archive),revision=forge.revisions.find(r=>r.id===forge.selected);
  // Una figura esculpida llega ya armada como malla; una pieza de OpenSCAD, como STL compilado.
  const read=result.mesh||readMeshFile('Alfred Forge.stl',base64Bytes(result.files?.stl)),prepared=prepareImport(api,read);
- if(prepared.size.some(v=>v<=0||v>300))throw Error('La pieza debe tener volumen y medir como máximo 300 mm por eje. Pedí una versión más pequeña.');
+ // Estas dos causas no son lo mismo para quien lo pide: sin volumen no es "pedí una más chica" (el tamaño no tiene nada que ver), es que la geometría quedó vacía o degenerada tras limpiarla.
+ if(prepared.size.some(v=>v<=0))throw Error('La pieza quedó sin volumen al prepararla (por ejemplo, si quedó armada en partes sueltas que no llegan a tocarse). Probá describirla de otra manera.');
+ if(prepared.size.some(v=>v>300))throw Error('La pieza mide más de 300 mm en algún eje. Pedí una versión más chica.');
  const candidate=validate({...defaults,project:current.forge||current.keepProject?current.project:revision.prompt.slice(0,60),baseColor:sculptPalette(revision.sculpt||{parts:[]})?.base||current.baseColor,detailColor:current.detailColor,kind:'free',importedMesh:prepared.mesh,freeDesign:forgeProgram(revision.finish),forge});
  const built=buildModel(api,candidate);
  return {candidate,built,revision,simplified:prepared.tolerance>0,inverted:prepared.inverted};
