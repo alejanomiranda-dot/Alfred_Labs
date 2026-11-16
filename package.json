@@ -9,6 +9,8 @@
     "test": "node --test tests/*.test.js",
     "verify": "node scripts/verify.mjs",
     "forge:check": "node scripts/forge-check.mjs",
+    "verify:premium": "node scripts/verify-premium.mjs",
+    "evaluate:mechanisms": "node scripts/evaluate-mechanisms.mjs",
     "forge:example": "node experiments/alfred-forge/forge.mjs --example",
     "verify:browser": "node scripts/verify-forge-browser.mjs",
     "verify:live": "node scripts/verify-live-browser.mjs"

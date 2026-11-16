@@ -1,3 +1,13 @@
+# Actualización · 16/11/2026 — mecanismos y calidad de fabricación
+
+Se agregó un contrato de fabricación persistente para piezas fijas, mecanismos print-in-place y conjuntos para ensamblar. El control compara cantidad exacta de cuerpos, separación mínima medida en la malla terminada, apoyo por cuerpo y pared aproximada. Los mecanismos conservan sus componentes pequeños y no admiten acabado orgánico que cambie holguras. La corrección de un mecanismo no puede devolver una pieza fija. Los animales articulados tienen prioridad de Forge sobre el escultor que fusiona sus partes.
+
+Cuatro desafíos ejecutados con IA real: bisagra, cadena de cinco eslabones, engranajes involuta 12/24 y caja con tapa deslizante. La cadena inicial tenía juego estático correcto pero chocaba al girar: Alfred corrigió la abertura con el barrido completo del brazo. Las fuentes y trayectorias revisadas están en `experiments/alfred-forge/challenges/`. `npm run verify:premium` repite compilación, controles estáticos y colisiones muestreadas sin API; `scripts/slice-mechanisms.mjs` comprueba G-code de Bambu Studio para A2L/PLA/0,16 mm sin soportes ni brim. No se conectó ni envió un trabajo a una impresora.
+
+La app no infiere ejes ni simula el movimiento de cualquier diseño nuevo. El banco de colisiones cubre las cuatro fuentes concretas. La validación física, retención, resistencia, acabado premium y consistencia de fabricación comercial están pendientes. Ver el README del banco para los criterios propuestos antes de vender.
+
+---
+
 # Estado de Alfred · 9 de noviembre de 2026
 
 Continuación en `codex/alfred-continuidad-forge`. Se conservó el trabajo del llavero en `4636708`, se integró la copia de Claude hasta `021140a` y se incorporó `origin/main`, incluido el nombre actual del proyecto. La copia de Claude queda disponible como worktree separado.

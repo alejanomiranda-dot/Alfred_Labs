@@ -3,6 +3,7 @@
 // All numbers are approximations meant to warn early; the slicer has the final word.
 import * as THREE from 'three';
 import {MeshBVH} from 'three-mesh-bvh';
+import {isMechanism,validateManufacturing} from '../shared/manufacturing.js';
 
 export const printDefaults={minWall:.8,overhangDeg:45,layer:.2,density:1.24,infill:.15,shell:.84,flow:12,layerSeconds:4,warmupSeconds:300};
 
@@ -63,6 +64,27 @@ export function partsOf(mesh){
 // Malla con solo los triángulos de las partes elegidas (para quitar detalles sueltos diminutos).
 export function keepParts(mesh,parts){const tri=[];for(const g of parts)for(const i of g.triangles)tri.push(mesh.triangles[i*3],mesh.triangles[i*3+1],mesh.triangles[i*3+2]);return {...mesh,triangles:new Uint32Array(tri)};}
 export const countParts=mesh=>partsOf(mesh).length;
+// Distances are measured on the final triangles, not copied from the AI's declaration.
+export function reviewMechanism(mesh,intent){
+ const spec=validateManufacturing(intent),parts=partsOf(mesh),issues=[];
+ if(parts.length!==spec.expectedParts)issues.push({kind:'parts',text:`El mecanismo pide ${spec.expectedParts} cuerpos independientes y la malla tiene ${parts.length}: puede haber uniones fusionadas o piezas sueltas.`});
+ const geometries=parts.map(p=>{const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(triangles(keepParts(mesh,[p])),3));g.boundsTree=new MeshBVH(g);return g;});
+ let gap=null;
+ try{
+  const identity=new THREE.Matrix4(),pairs=[];
+  for(let i=0;i<parts.length;i++)for(let j=i+1;j<parts.length;j++)pairs.push({i,j,bound:Math.hypot(...[0,1,2].map(k=>Math.max(0,parts[i].min[k]-parts[j].max[k],parts[j].min[k]-parts[i].max[k])))});
+  for(const {i,j,bound} of pairs.sort((a,b)=>a.bound-b.bound)){
+   if(gap!==null&&bound>=gap)continue;
+   const hit=geometries[i].boundsTree.closestPointToGeometry(geometries[j],identity,{}, {},0,gap??Infinity);
+   if(hit)gap=gap===null?hit.distance:Math.min(gap,hit.distance);
+  }
+ }finally{for(const g of geometries){g.boundsTree=null;g.dispose();}}
+ if(gap!==null&&gap<spec.clearance-.01)issues.push({kind:'clearance',text:`La separación mínima medida es ${gap.toFixed(3)} mm; se pidieron ${spec.clearance} mm entre superficies. Puede trabarse al imprimir.`});
+ const bed=Math.min(...parts.map(p=>p.min[2]));
+ const floating=parts.filter(p=>p.min[2]>bed+.05||surfaceStats(triangles(keepParts(mesh,[p])),printDefaults).contact<1).length;
+ if(floating)issues.push({kind:'contact',text:`${floating} cuerpos no tienen apoyo plano propio en la cama. Revisá la orientación y los puentes antes de laminar.`});
+ return {spec,parts:parts.length,minGap:gap,issues,physicalVerified:false};
+}
 export function reviewPrint(mesh,volume,options={}){
  const opts={...printDefaults,...options},soup=triangles(mesh),stats=surfaceStats(soup,opts);
  // Thin walls: from each sampled face, a ray goes inward; the distance to the opposite surface is the local thickness.
@@ -85,13 +107,16 @@ export function reviewPrint(mesh,volume,options={}){
  const shell=Math.min(volume,stats.area*opts.shell),material=shell+Math.max(0,volume-shell)*opts.infill+stats.supportVolume;
  const grams=material/1000*opts.density,layers=Math.ceil(stats.height/opts.layer),seconds=material/opts.flow+layers*opts.layerSeconds+opts.warmupSeconds;
  const issues=[];
- const parts=countParts(mesh),expectedParts=opts.expectedParts||1;if(parts>expectedParts)issues.push({kind:'parts',text:`Tiene ${parts} partes que no se tocan: se imprimirían sueltas.`});
- if(stats.overhang>20)issues.push({kind:'overhang',text:`Voladizos de ${Math.round(stats.overhang)} mm² con más de ${opts.overhangDeg}°: van a necesitar soportes.`});
+ const mechanism=isMechanism(opts.manufacturing)?reviewMechanism(mesh,opts.manufacturing):null;
+ const parts=countParts(mesh),expectedParts=opts.expectedParts||1;
+ if(mechanism)issues.push(...mechanism.issues);
+ else if(parts>expectedParts)issues.push({kind:'parts',text:`Tiene ${parts} partes que no se tocan: se imprimirían sueltas.`});
+ if(stats.overhang>20)issues.push({kind:'overhang',text:mechanism?`Voladizos de ${Math.round(stats.overhang)} mm²: revisá puentes y techos en el laminado; evitá soportes atrapados dentro del mecanismo.`:`Voladizos de ${Math.round(stats.overhang)} mm² con más de ${opts.overhangDeg}°: van a necesitar soportes.`});
  // Tips of letters and sharp corners are always thin at the very end: only warn when a real area is affected.
  const typical=thinHits.sort((x,y)=>x-y)[Math.floor(thinHits.length/2)];
  if(thinArea>Math.max(4,stats.area*.03))issues.push({kind:'thin',text:`Unos ${Math.round(thinArea)} mm² tienen paredes de ~${typical.toFixed(2).replace('.',',')} mm, por debajo de ${String(opts.minWall).replace('.',',')} mm: pueden no imprimirse o quedar frágiles (en naranja al marcar en la pieza).`});
  if(stats.contact<Math.min(60,stats.area*.02))issues.push({kind:'contact',text:`Apoya solo ${Math.round(stats.contact)} mm² en la cama: conviene usar borde (brim) o reorientar.`});
- return {grams,seconds,layers,material,supportVolume:stats.supportVolume,overhangArea:stats.overhang,contactArea:stats.contact,minWall:Number.isFinite(minWall)?minWall:null,thinArea,issues,suggestion,
+ return {grams,seconds,layers,material,supportVolume:stats.supportVolume,overhangArea:stats.overhang,contactArea:stats.contact,minWall:Number.isFinite(minWall)?minWall:null,thinArea,issues,suggestion,mechanism,
   highlight:{overhang:subset(soup,stats.flagged),thin:subset(soup,thin)}};
 }
 function subset(soup,ids){const positions=new Float32Array(ids.length*9),tri=new Uint32Array(ids.length*3);ids.forEach((id,k)=>{positions.set(soup.subarray(id*9,id*9+9),k*9);tri.set([k*3,k*3+1,k*3+2],k*3);});return {numProp:3,positions,triangles:tri};}
