@@ -1,3 +1,4 @@
+import {manufacturingOf,isMechanism} from '../../shared/manufacturing.js';
 // «Tu pieza»: solo los controles que tienen sentido para el tipo de pieza actual.
 import {keychainLogoPreview,keychainUrl,colorName,hasLogoText} from '../keychain.js';
 import {renderOpEditor} from '../op-editor.js';
@@ -139,8 +140,8 @@ function forgeControls(p,ctx){
  const notes=[...(selected?.assumptions||[]),...(selected?.caveats||[])];
  const summary=(selected?.description||'Pieza generada por Alfred.').split(/(?<=\.)\s/)[0];
  return [
-  group('Pieza generada',el('p',{className:'note',textContent:summary}),el('p',{className:'note',textContent:'Para cambiarla, pedíselo a Alfred: «más alta», «sin cola», «orejas más grandes».'})),
-  p.kind==='free'&&p.freeDesign?finishControls(p,ctx):null,
+  group('Pieza generada',el('p',{className:'note',textContent:summary}),el('p',{className:'note',textContent:isMechanism(manufacturingOf(p))?'Para cambiar el largo, las hojas o el juego, pedíselo a Alfred. Conservá las holguras al modificar las medidas.':'Para cambiarla, pedíselo a Alfred: «más alta», «sin cola», «orejas más grandes».'})),
+  p.kind==='free'&&p.freeDesign&&!isMechanism(manufacturingOf(p))?finishControls(p,ctx):null,
   group(null,el('details',{},el('summary',{textContent:'Avanzado · versiones, notas y fuente'}),el('label',{},'Versión',select),el('div',{className:'library-actions'},rebuild,source),notes.length?el('ul',{className:'note'},...notes.map(t=>el('li',{textContent:t}))):null,el('pre',{className:'forge-code',textContent:selected?.scad||(selected?.sculpt?selected.sculpt.parts.map(x=>x.name||x.shape).join(' · '):'')})))
  ];
 }
@@ -179,7 +180,7 @@ export function renderStatus(host,{review,model,settings,money,durationText,cost
   const print=el('button',{type:'button',textContent:'Imprimir'});print.onclick=onPrint;
   const actions=el('div',{className:'actions'},print);
   if(supports){const heat=el('button',{type:'button',textContent:heatOn?'Ocultar marcas':'Ver dónde'});heat.onclick=onHeat;actions.append(heat);}
-  host.append(el('div',{className:'status ok'},el('strong',{textContent:supports?'Lista para imprimir con soportes':'Lista para imprimir'}),supports?'Algunas partes salen en el aire: activá los soportes automáticos en Bambu Studio.':'No necesita soportes y las paredes tienen buen espesor.',meta,actions));return;
+  host.append(el('div',{className:'status ok'},el('strong',{textContent:review.mechanism?'Prototipo para laminar':supports?'Lista para imprimir con soportes':'Lista para imprimir'}),review.mechanism?'Conservá la posición de los cuerpos. Revisá las holguras en el laminado y probá movimiento y retención en una muestra física.':supports?'Algunas partes salen en el aire: activá los soportes automáticos en Bambu Studio.':'No necesita soportes y las paredes tienen buen espesor.',meta,actions));return;
  }
  const actions=el('div',{className:'actions'});
  const heat=el('button',{type:'button',textContent:heatOn?'Ocultar marcas':'Ver dónde'});heat.onclick=onHeat;actions.append(heat);

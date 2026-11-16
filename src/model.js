@@ -1,5 +1,6 @@
 import {buildKeychain,validateKeychain,keychainUrl} from './keychain.js';
 import {validateForgeArchive} from '../shared/forge-schema.js';
+import {manufacturingOf,isMechanism} from '../shared/manufacturing.js';
 import {validateGeneration} from './generation-spec.js';
 import QRCode from 'qrcode';
 import {validateProgram,buildSolidProgram,withImport} from './solid-program.js';
@@ -33,6 +34,7 @@ export function validate(raw){
   if(p.importedMesh!==null){const m=p.importedMesh;if(!m||typeof m.name!=='string'||m.name.length>120||!Array.isArray(m.vertices)||!Array.isArray(m.triangles)||m.vertices.length%3||m.triangles.length%3||!m.triangles.length||m.triangles.length>maxStoredTriangles*3)throw Error('La pieza importada es inválida o demasiado compleja.');if(!m.vertices.every(v=>typeof v==='number'&&Number.isFinite(v)&&Math.abs(v)<=1000))throw Error('La pieza importada tiene coordenadas inválidas.');const count=m.vertices.length/3;if(!m.triangles.every(v=>Number.isInteger(v)&&v>=0&&v<count))throw Error('La pieza importada tiene triángulos inválidos.');}
   if(p.freeDesign!==null)validateProgram(withImport(p.freeDesign,p));
   p.forge=validateForgeArchive(p.forge);
+  if(p.kind==='free'&&isMechanism(manufacturingOf(p))&&p.freeDesign?.nodes.some(n=>n.type==='finish'))throw Error('El acabado orgánico altera las holguras de un mecanismo. Conservá las superficies técnicas sin suavizar ni texturizar.');
   if(p.kind!=='free'||!p.freeDesign?.nodes.some(n=>n.type==='imported'))p.importedMesh=null;
   p.sourceInfo=p.importedMesh&&p.sourceInfo?validateGeneration(p.sourceInfo):null;
   p.importedColors=p.sourceInfo?.palette.length?validateImportedColors(p.importedColors):null;

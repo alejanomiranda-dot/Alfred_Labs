@@ -20,7 +20,7 @@ export function createPrint({dialog,app,toast}){
  <ol class="steps"><li>Abrí el archivo en Bambu Studio: Archivo → Importar, o arrastralo a la ventana.</li><li>Si tiene varios colores, asigná un filamento a cada uno. Las partes son un solo objeto: no las separes.</li><li id="supportStep">Elegí el perfil de tu impresora, laminá y mirá la vista previa.</li><li>Imprimí una primera muestra. Si tiene un QR, escanealo en la pieza real.</li></ol>
  <details class="more"><summary>Más formatos y herramientas</summary>
   <div class="tools">
-   <button type="button" id="exportStl">STL de una sola pieza</button>
+   <button type="button" id="exportStl">STL (un archivo)</button>
    <button type="button" id="exportProject">Proyecto editable</button>
    <button type="button" id="savePackage">Paquete ZIP con guía</button>
    <button type="button" id="productPhoto">Foto de producto</button>
@@ -39,9 +39,10 @@ export function createPrint({dialog,app,toast}){
   const c=costOf(review,settings);
   host.innerHTML=`<div class="stats"><div class="stat"><small>Material</small><strong>${review.grams.toFixed(1).replace('.',',')} g</strong></div><div class="stat"><small>Tiempo</small><strong>${durationText(review.seconds)}</strong></div><div class="stat"><small>Costo</small><strong>${money(c.cost,settings)}</strong></div></div><p class="hint">Precio sugerido con ${settings.margin} % de margen: ${money(c.price,settings)}. Estimación para boquilla de 0,4 mm y capas de 0,2 mm; Bambu Studio da el valor final.</p>`;
   const list=document.createElement('ul');list.className='issues';
-  for(const i of review.issues.length?review.issues:[{kind:'ok',text:'Sin problemas: no necesita soportes y las paredes tienen buen espesor.'}]){const li=document.createElement('li');li.className=i.kind;li.textContent=i.text;list.append(li);}
+  for(const i of review.issues.length?review.issues:[{kind:'ok',text:review.mechanism?'Controles geométricos aprobados. Falta validar el laminado y una muestra física.':'Sin problemas detectados en el análisis geométrico. Revisá el laminado antes de imprimir.'}]){const li=document.createElement('li');li.className=i.kind;li.textContent=i.text;list.append(li);}
   host.append(list);
-  $('supportStep').textContent=review.issues.some(i=>i.kind==='overhang')?'Elegí el perfil de tu impresora y activá Soportes (tipo árbol, automático). Laminá y mirá la vista previa.':'Elegí el perfil de tu impresora, laminá y mirá la vista previa. No necesita soportes.';
+  if(review.mechanism){const m=review.mechanism,p=document.createElement('p');p.className='hint';p.textContent=m.parts+' cuerpos independientes · '+(m.minGap===null?'separación no medible: faltan cuerpos':'separación mínima medida: '+m.minGap.toFixed(3)+' mm')+' en la disposición de impresión. La medida no prueba encastre, movimiento ni retención. Antes de vender: muestra física y control de acabado y desgaste.';host.append(p);}
+  $('supportStep').textContent=review.mechanism?'Conservá la posición de los cuerpos. Evitá soportes dentro de las articulaciones. Laminá con tu perfil y revisá puentes, holguras y primeras capas. No reordenes las piezas de un mecanismo que se imprime armado.':review.issues.some(i=>i.kind==='overhang')?'Elegí el perfil de tu impresora y activá Soportes (tipo árbol, automático). Laminá y mirá la vista previa.':'Elegí el perfil de tu impresora, laminá y mirá la vista previa. No necesita soportes.';
  }
  const model=()=>{const m=app.model();if(!m)toast('Todavía no hay una pieza para exportar.');return m;};
  // Use the browser download flow: embedded browsers may expose a save picker that never opens.

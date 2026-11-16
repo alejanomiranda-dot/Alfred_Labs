@@ -4,12 +4,14 @@ import {defaults,validate,buildModel} from './model.js';
 import {readMeshFile} from './mesh-import.js';
 import {prepareImport} from './solid-program.js';
 import {sculptPalette} from '../shared/sculpt-schema.js';
+import {validateManufacturing,isMechanism,technicalFinish} from '../shared/manufacturing.js';
 export function base64Bytes(encoded){
  if(typeof encoded!=='string'||encoded.length>17*1024*1024||!encoded.length||!/^[A-Za-z0-9+/]+=*$/.test(encoded))throw Error('Archivo de Forge inválido o demasiado grande.');
  return Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));
 }
 export function revisionFromResult(result,prompt,id=crypto.randomUUID()){
- return {id,prompt,...(result.sculpt?{sculpt:result.sculpt}:{scad:result.scad}),description:result.description,assumptions:result.assumptions,caveats:result.caveats,created:result.created,...(result.finish?{finish:validateFinish(result.finish)}:{})};
+ const manufacturing=validateManufacturing(result.manufacturing);
+ return {id,prompt,...(result.sculpt?{sculpt:result.sculpt}:{scad:result.scad}),description:result.description,assumptions:result.assumptions,caveats:result.caveats,created:result.created,...(result.finish?{finish:isMechanism(manufacturing)?{...technicalFinish}:validateFinish(result.finish)}:{}),...(result.manufacturing?{manufacturing}:{})};
 }
 // The generated piece plus, when it has one, its organic finish as a final operation the panel can change.
 export function forgeProgram(finish){
@@ -33,7 +35,7 @@ export function prepareForgeProposal(api,current,result,archive){
  // Estas dos causas no son lo mismo para quien lo pide: sin volumen no es "pedí una más chica" (el tamaño no tiene nada que ver), es que la geometría quedó vacía o degenerada tras limpiarla.
  if(prepared.size.some(v=>v<=0))throw Error('La pieza quedó sin volumen al prepararla (por ejemplo, si quedó armada en partes sueltas que no llegan a tocarse). Probá describirla de otra manera.');
  if(prepared.size.some(v=>v>300))throw Error('La pieza mide más de 300 mm en algún eje. Pedí una versión más chica.');
- const candidate=validate({...defaults,project:current.forge||current.keepProject?current.project:revision.prompt.slice(0,60),baseColor:sculptPalette(revision.sculpt||{parts:[]})?.base||current.baseColor,detailColor:current.detailColor,kind:'free',importedMesh:prepared.mesh,freeDesign:forgeProgram(revision.finish),forge});
+ const candidate=validate({...defaults,project:current.forge||current.keepProject?current.project:revision.prompt.slice(0,60),baseColor:sculptPalette(revision.sculpt||{parts:[]})?.base||current.baseColor,detailColor:current.detailColor,kind:'free',importedMesh:prepared.mesh,freeDesign:forgeProgram(isMechanism(revision.manufacturing)?technicalFinish:revision.finish),forge});
  const built=buildModel(api,candidate);
  return {candidate,built,revision,simplified:prepared.tolerance>0,inverted:prepared.inverted};
 }

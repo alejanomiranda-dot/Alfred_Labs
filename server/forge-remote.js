@@ -40,7 +40,7 @@ export async function runRemoteForge(raw,{env=process.env,signal,createSandbox=o
    let data=await compile(result.scad);
    // Una pieza generada que no compila o es demasiado pesada se corrige sola una vez, con el error real.
    if(!data.ok&&body.action==='generate'&&retryable(data.code)&&Date.now()-started<120000){
-    const fixed=await generateForgeSource({prompt:fixPrompt(data.code,data.detail),previous:result.scad,history:[]},env,{signal,fetcher});
+    const fixed=await generateForgeSource({prompt:fixPrompt(data.code,data.detail),previous:result.scad,previousManufacturing:result.manufacturing,previousFinish:result.finish,history:[]},env,{signal,fetcher});
     const second=await compile(fixed.scad);
     if(second.ok){result={...fixed,description:result.description,assumptions:result.assumptions,caveats:[...result.caveats,'Se simplificó una vez para que el compilador la pudiera construir.']};data=second;}
    }

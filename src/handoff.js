@@ -1,3 +1,4 @@
+import {manufacturingOf,isMechanism} from '../shared/manufacturing.js';
 import {zipSync,strToU8} from 'fflate';
 import {threeMfBytes} from './export.js';
 
@@ -6,7 +7,7 @@ export function revisionName(project,date=new Date(),suffix=crypto.randomUUID().
  const pad=n=>String(n).padStart(2,'0');
  return `${safeName(project)}-${date.getFullYear()}${pad(date.getMonth()+1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}-${suffix}`;
 }
-export function printGuide(params,dimensions){return `TALLER DE VERO — ${params.project}
+export function printGuide(params,dimensions){const intent=manufacturingOf(params);return `TALLER DE VERO — ${params.project}
 
 ARCHIVOS
 • .3mf: geometría para Bambu Studio${params.kind==='keychain'?', con base clara, logo multicolor y QR del dorso como partes':params.kind==='free'?(params.importedColors?', relieve con la placa y cada color como partes separadas':', diseño libre'):', con base y relieve como partes'}.
@@ -28,7 +29,7 @@ Color base: ${params.baseColor} · Color relieve: ${params.detailColor}
 Dorso: ${params.backDecoration==='bone'?'Huesito ('+(params.backStyle==='raised'?'relieve':'grabado')+', '+params.backDepth+' mm)':'Sin decoración'}
 Si hay relieve en ambas caras, comprobar orientación y soportes. El grabado del dorso no sobresale de la base.
 
-${params.kind==='keychain'?'LLAVERO DE DOS CARAS\nFrente: logo original adaptado a hasta 3 colores sólidos. Los degradados se simplifican.\nDorso: QR al ras, con una profundidad de color de 0,6 mm sobre base clara.\nDestino exacto: '+params.qrText+'\nImprimir con el QR apoyado en la cama y conservar todas las partes como un único objeto.\n\n':''}PRIMERA MUESTRA
+${isMechanism(intent)?'MECANISMO — PROTOTIPO SIN VALIDACIÓN FÍSICA\nModo: '+(intent.mode==='print_in_place'?'se imprime ensamblado':'ensamblaje posterior')+'\nCuerpos previstos: '+intent.expectedParts+'\nHolgura nominal entre superficies: '+intent.clearance+' mm (no es una medición ni garantía de movimiento).\nPared objetivo: '+intent.minWall+' mm.\nConservá todas las posiciones; no uses organizar/separar automáticamente para print-in-place. No pongas soportes en las holguras. Revisá puentes y primeras capas en el laminado. Imprimí una muestra y comprobá movimiento, retención, medidas, acabado y desgaste antes de vender.\n\n':''}${params.kind==='keychain'?'LLAVERO DE DOS CARAS\nFrente: logo original adaptado a hasta 3 colores sólidos. Los degradados se simplifican.\nDorso: QR al ras, con una profundidad de color de 0,6 mm sobre base clara.\nDestino exacto: '+params.qrText+'\nImprimir con el QR apoyado en la cama y conservar todas las partes como un único objeto.\n\n':''}PRIMERA MUESTRA
 La geometría cerrada no garantiza calidad de impresión ni resistencia. Imprimí y medí una muestra. Si lleva QR, verificá el destino y escaneá la pieza física antes de entregarla.
 `;
 }
